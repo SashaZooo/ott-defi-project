@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 """
 Suite de tests unitaires automatisés pour valider chaque module du pipeline OTT DeFi.
 Exécution : python test_pipeline.py  (ou : python -m unittest test_pipeline.py)

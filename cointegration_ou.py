@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 """
 Module 2 : Cointégration, Processus d'Ornstein-Uhlenbeck (OU) et Signaux Dynamiques EWMA.
 """
