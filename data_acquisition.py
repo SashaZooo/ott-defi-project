@@ -1,100 +1,162 @@
 """
-Module 1 : Acquisition et préparation des données historiques DEX (1h).
+Module 1 : Acquisition de données historiques DEX réelles (GeckoTerminal, Uniswap V3, 1h).
 """
 
+import json
 import os
-import requests
-import numpy as np
+import re
+import time
+from datetime import datetime, timezone
+
 import pandas as pd
-from config import START_DATE, END_DATE, DEX_PAIRS
+import requests
+
+from config import START_DATE, END_DATE, DEX_PAIRS, TOKENS, GECKO_NETWORK
+
+BASE_URL = "https://api.geckoterminal.com/api/v2"
+HEADERS = {"Accept": "application/json;version=20230302"}
+REQUEST_PAUSE_S = 2.2
+MAX_RETRIES = 5
+MAX_FFILL_HOURS = 12       # Sur DEX, absence de swap = prix on-chain inchangé
+MAX_MISSING_FRAC = 0.05    # Seuil maximal de trous après ffill de 12h
+DATA_DIR = "data"
+POOLS_JSON = os.path.join(DATA_DIR, "pools_resolved.json")
 
 
-def fetch_geckoterminal_pool(pool_address: str, limit: int = 1000) -> pd.DataFrame:
-    """Tente de récupérer les bougies horaires via l'API publique GeckoTerminal."""
-    url = f"https://api.geckoterminal.com/api/v2/networks/eth/pools/{pool_address}/ohlcv/hour"
-    params = {"aggregate": 1, "limit": limit, "currency": "usd"}
-    headers = {"Accept": "application/json;version=20230302"}
-    try:
-        response = requests.get(url, params=params, headers=headers, timeout=8)
-        if response.status_code == 200:
-            data = response.json()["data"]["attributes"]["ohlcv_list"]
-            if len(data) > 200:
-                df = pd.DataFrame(
-                    data, columns=["timestamp", "open", "high", "low", "close", "volume"]
-                )
-                df["Date"] = pd.to_datetime(df["timestamp"], unit="s")
-                return df.sort_values("Date").reset_index(drop=True)
-    except Exception:
-        pass
-    return pd.DataFrame()
+def _get(path: str, params: dict | None = None) -> dict:
+    for attempt in range(MAX_RETRIES):
+        resp = requests.get(BASE_URL + path, params=params, headers=HEADERS, timeout=20)
+        if resp.status_code == 200:
+            time.sleep(REQUEST_PAUSE_S)
+            return resp.json()
+        if resp.status_code == 429:
+            time.sleep(10 * (attempt + 1))
+            continue
+        resp.raise_for_status()
+    raise RuntimeError(f"GeckoTerminal : échec après {MAX_RETRIES} tentatives sur {path}")
 
 
-def generate_calibrated_dex_data(start_date: str, end_date: str, seed: int = 42) -> pd.DataFrame:
-    """
-    Génère des séries horaires de prix DEX réalistes (co-intégrées avec sauts de liquidité)
-    sur la fenêtre Q3 2025 - Q3 2026 pour garantir la reproductibilité hors-ligne.
-    """
-    np.random.seed(seed)
-    dates = pd.date_range(start=start_date, end=end_date, freq="1h")
-    n = len(dates)
-
-    # Facteur de marché commun ETH (mouvement brownien géométrique)
-    eth_returns = np.random.normal(0.00003, 0.0065, n)
-    weth_price = 3000.0 * np.exp(np.cumsum(eth_returns))
-
-    # Facteur stablecoin de référence (USDC)
-    usdc_noise = np.random.normal(0.0, 0.00015, n)
-    usdc_price = 1.0 + np.cumsum(usdc_noise) * 0.01
-    usdc_price = np.clip(usdc_price, 0.998, 1.002)
-
-    def simulate_ou_spread(theta, sigma, n_steps, jump_prob=0.003, jump_scale=0.004):
-        s = np.zeros(n_steps)
-        for t in range(1, n_steps):
-            jump = np.random.choice([0.0, np.random.normal(0, jump_scale)], p=[1 - jump_prob, jump_prob])
-            s[t] = s[t - 1] * (1.0 - theta) + np.random.normal(0.0, sigma) + jump
-        return s
-
-    # 1. Univers Stablecoins (retour à la moyenne rapide, micro-depegs temporaires)
-    spread_usdt = simulate_ou_spread(theta=0.14, sigma=0.00045, n_steps=n, jump_scale=0.0025)
-    spread_dai = simulate_ou_spread(theta=0.11, sigma=0.00055, n_steps=n, jump_scale=0.0030)
-    usdt_price = usdc_price * np.exp(spread_usdt)
-    dai_price = usdc_price * np.exp(spread_dai)
-
-    # 2. Univers LST (stETH et rETH co-intégrés avec WETH, primes de liquidité)
-    spread_steth = simulate_ou_spread(theta=0.08, sigma=0.0012, n_steps=n, jump_scale=0.005)
-    spread_reth = simulate_ou_spread(theta=0.07, sigma=0.0016, n_steps=n, jump_scale=0.006)
-    steth_price = weth_price * np.exp(spread_steth)
-    reth_price = (weth_price * 1.09) * np.exp(spread_reth)
-
-    # 3. Univers DeFi (UNI et AAVE co-intégrés avec WETH avec volatilité supérieure)
-    spread_uni = simulate_ou_spread(theta=0.05, sigma=0.0065, n_steps=n, jump_scale=0.015)
-    spread_aave = simulate_ou_spread(theta=0.055, sigma=0.0070, n_steps=n, jump_scale=0.016)
-    uni_price = (weth_price * 0.0032) * np.exp(spread_uni)
-    aave_price = (weth_price * 0.0480) * np.exp(spread_aave)
-
-    df = pd.DataFrame({
-        "Date": dates,
-        "USDC": usdc_price,
-        "USDT": usdt_price,
-        "DAI": dai_price,
-        "WETH": weth_price,
-        "stETH": steth_price,
-        "rETH": reth_price,
-        "UNI": uni_price,
-        "AAVE": aave_price,
-    })
-    return df
+def _ts(date_str: str) -> int:
+    return int(datetime.fromisoformat(date_str).replace(tzinfo=timezone.utc).timestamp())
 
 
-def load_or_fetch_data(csv_path: str = "data/dex_hourly_prices.csv") -> pd.DataFrame:
-    """Charge les données locales ou construit le dataset DEX complet."""
-    if os.path.exists(csv_path):
-        df = pd.read_csv(csv_path, parse_dates=["Date"])
-        return df
+def discover_pool(addr_a: str, addr_b: str, fee_pct: float, pages: int = 3) -> dict:
+    addr_a, addr_b = addr_a.lower(), addr_b.lower()
+    candidates = []
+    for page in range(1, pages + 1):
+        payload = _get(f"/networks/{GECKO_NETWORK}/tokens/{addr_a}/pools", {"page": page})
+        for pool in payload.get("data", []):
+            attrs, rel = pool["attributes"], pool["relationships"]
+            ids = {rel["base_token"]["data"]["id"].split("_")[-1].lower(),
+                   rel["quote_token"]["data"]["id"].split("_")[-1].lower()}
+            m = re.search(r"(\d+(?:\.\d+)?)\s*%", attrs.get("name", ""))
+            fee = float(m.group(1)) if m else None
+            dex = rel.get("dex", {}).get("data", {}).get("id", "")
+            if ids == {addr_a, addr_b} and fee is not None and abs(fee - fee_pct) < 1e-9 \
+                    and "uniswap_v3" in dex:
+                candidates.append({
+                    "address": attrs["address"].lower(),
+                    "name": attrs["name"],
+                    "reserve_in_usd": float(attrs.get("reserve_in_usd") or 0.0),
+                })
+    if not candidates:
+        raise LookupError(f"Aucun pool Uniswap V3 {addr_a}/{addr_b} au tier {fee_pct}% trouvé")
+    return max(candidates, key=lambda c: c["reserve_in_usd"])
 
-    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-    print("[Data] Construction du dataset DEX horaire (Q3 2025 - Q3 2026)...")
-    df = generate_calibrated_dex_data(START_DATE, END_DATE)
+
+def resolve_pools() -> dict:
+    resolved = {}
+    for pair, cfg in DEX_PAIRS.items():
+        info = discover_pool(TOKENS[cfg["leg1"]], TOKENS[cfg["leg2"]], cfg["swap_fee"] * 100)
+        info["leg1"], info["leg2"], info["fee_pct"] = cfg["leg1"], cfg["leg2"], cfg["swap_fee"] * 100
+        resolved[pair] = info
+        print(f"[Data] {pair:12s} -> {info['address']}  '{info['name']}'  TVL ${info['reserve_in_usd']:,.0f}")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(POOLS_JSON, "w") as f:
+        json.dump({"resolved_at": datetime.now(timezone.utc).isoformat(), "pools": resolved}, f, indent=2)
+    return resolved
+
+
+def apply_resolved_pools(path: str = POOLS_JSON) -> None:
+    with open(path) as f:
+        pools = json.load(f)["pools"]
+    for pair, info in pools.items():
+        if pair in DEX_PAIRS:
+            if info["reserve_in_usd"] > 0:
+                DEX_PAIRS[pair]["pool_liquidity"] = info["reserve_in_usd"]
+            DEX_PAIRS[pair]["gecko_pool"] = info["address"]
+
+
+def fetch_token_hourly(pool: str, token_addr: str, start_ts: int, end_ts: int) -> pd.Series:
+    rows, before = {}, end_ts + 3600
+    while True:
+        payload = _get(
+            f"/networks/{GECKO_NETWORK}/pools/{pool}/ohlcv/hour",
+            {"aggregate": 1, "limit": 1000, "before_timestamp": before,
+             "currency": "usd", "token": token_addr},
+        )
+        batch = payload["data"]["attributes"]["ohlcv_list"]
+        if not batch:
+            break
+        for ts, _o, _h, _l, close, _v in batch:
+            rows[int(ts)] = float(close)
+        oldest = min(int(r[0]) for r in batch)
+        if oldest <= start_ts or oldest >= before:
+            break
+        before = oldest
+    s = pd.Series(rows, dtype=float).sort_index()
+    s.index = pd.to_datetime(s.index, unit="s")
+    return s[(s.index >= pd.to_datetime(start_ts, unit="s")) & (s.index <= pd.to_datetime(end_ts, unit="s"))]
+
+
+def build_dataset(resolved: dict) -> pd.DataFrame:
+    start_ts, end_ts = _ts(START_DATE), _ts(END_DATE)
+    source = {}
+    for pair, info in resolved.items():
+        source.setdefault(info["leg1"], info["address"])
+    for pair, info in resolved.items():
+        source.setdefault(info["leg2"], info["address"])
+
+    grid = pd.date_range(START_DATE, END_DATE, freq="1h")
+    cols = {}
+    for token, pool in source.items():
+        print(f"[Data] Téléchargement {token} (pool {pool[:10]}...)")
+        s = fetch_token_hourly(pool, TOKENS[token], start_ts, end_ts)
+        if s.empty:
+            raise RuntimeError(f"{token} : aucune donnée reçue")
+        raw_obs = len(s)
+        s = s.reindex(grid).ffill(limit=MAX_FFILL_HOURS)
+        missing = s.isna().mean()
+        print(f"[Data]   {token}: {raw_obs} bougies brutes, {missing:.2%} de trous après ffill, "
+              f"début {s.first_valid_index()}")
+        if missing > MAX_MISSING_FRAC:
+            raise RuntimeError(f"{token} : {missing:.1%} d'heures manquantes (> {MAX_MISSING_FRAC:.0%}).")
+        cols[token] = s.ffill().bfill()
+    df = pd.DataFrame(cols)
+    df.insert(0, "Date", grid)
+    return df.reset_index(drop=True)
+
+
+def load_or_fetch_data(csv_path: str = os.path.join(DATA_DIR, "dex_hourly_prices.csv")) -> pd.DataFrame:
+    meta_path = csv_path.replace(".csv", ".meta.json")
+    if os.path.exists(csv_path) and os.path.exists(meta_path) and os.path.exists(POOLS_JSON):
+        apply_resolved_pools()
+        return pd.read_csv(csv_path, parse_dates=["Date"])
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+    print("[Data] Extraction des données réelles via GeckoTerminal...")
+    resolved = resolve_pools()
+    df = build_dataset(resolved)
     df.to_csv(csv_path, index=False)
-    print(f"[Data] Dataset sauvegardé dans '{csv_path}' ({len(df)} observations horaires).")
+    with open(meta_path, "w") as f:
+        json.dump({"source": "GeckoTerminal", "network": GECKO_NETWORK, "start": START_DATE,
+                   "end": END_DATE, "fetched_at": datetime.now(timezone.utc).isoformat(),
+                   "rows": len(df)}, f, indent=2)
+    apply_resolved_pools()
+    print(f"[Data] Sauvegardé : '{csv_path}' ({len(df)} lignes).")
     return df
+
+
+if __name__ == "__main__":
+    df = load_or_fetch_data()
+    print(df.head())

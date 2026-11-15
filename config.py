@@ -1,83 +1,64 @@
 """
-Configuration centrale du projet OTT - Extension DeFi.
+Configuration centrale du projet OTT - Extension DeFi (Données Réelles Uniswap V3).
 """
 
-# 1. Fenêtre temporelle et échantillonnage (Q3 2025 - Q3 2026, fréquence 1 heure)
-START_DATE = "2025-07-01"
-END_DATE = "2026-07-01"
+# 1. Fenêtre temporelle réelle (88 jours / ~2 089 heures, fréquence 1 heure)
+START_DATE = "2026-08-15"
+END_DATE = "2026-11-10"
 TIMEFRAME = "1h"
 FORMATION_RATIO = 0.35  # 35% In-Sample (Formation), 65% Out-of-Sample (Backtest)
 
-# 2. Univers d'actifs DEX (Uniswap V3) et paramètres de friction par pool
-# Chaque paire définit : (Actif_1, Actif_2, Frais_Swap_AMM, Profondeur_Liquidite_USD)
+# 2. Source de données : GeckoTerminal (agrégateur DEX), réseau Ethereum mainnet
+GECKO_NETWORK = "eth"
+
+TOKENS = {
+    "USDC":   "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "USDT":   "0xdac17f958d2ee523a2206206994597c13d831ec7",
+    "DAI":    "0x6b175474e89094c44da98b954eedeac495271d0f",
+    "WETH":   "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+    "wstETH": "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+    "UNI":    "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+    "AAVE":   "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9",
+}
+
+# 5 paires couvrant les 3 univers exigés par l'énoncé (Section 2.A)
 DEX_PAIRS = {
-    # Univers 1 : Stablecoins (Frais Uniswap V3 0.01%)
     "USDT_USDC": {
-        "universe": "Stablecoins",
-        "leg1": "USDT",
-        "leg2": "USDC",
-        "swap_fee": 0.0001,        # 0.01%
-        "pool_liquidity": 150_000_000,
-        "gecko_pool": "0x3416cf6c708da44db2624d63ea0aaef7113527c6"
+        "universe": "Stablecoins", "leg1": "USDT", "leg2": "USDC",
+        "swap_fee": 0.0001, "pool_liquidity": 33_500_000
     },
     "DAI_USDC": {
-        "universe": "Stablecoins",
-        "leg1": "DAI",
-        "leg2": "USDC",
-        "swap_fee": 0.0001,        # 0.01%
-        "pool_liquidity": 80_000_000,
-        "gecko_pool": "0x5777d92f208679db4b9778590fa3cab3ac9e2168"
+        "universe": "Stablecoins", "leg1": "DAI", "leg2": "USDC",
+        "swap_fee": 0.0001, "pool_liquidity": 1_000_000
     },
-    # Univers 2 : Liquid Staking Derivatives - LST (Frais 0.01% et 0.05%)
-    "stETH_WETH": {
-        "universe": "LST",
-        "leg1": "stETH",
-        "leg2": "WETH",
-        "swap_fee": 0.0001,        # 0.01%
-        "pool_liquidity": 200_000_000,
-        "gecko_pool": "0x109830a1aaad605bbf02a9dfa7b0b92ec2fb7daa"
+    "wstETH_WETH": {
+        "universe": "LST", "leg1": "wstETH", "leg2": "WETH",
+        "swap_fee": 0.0001, "pool_liquidity": 3_700_000
     },
-    "rETH_WETH": {
-        "universe": "LST",
-        "leg1": "rETH",
-        "leg2": "WETH",
-        "swap_fee": 0.0005,        # 0.05%
-        "pool_liquidity": 65_000_000,
-        "gecko_pool": "0xa4e0faa58465a2d369aa21b3e42d43374c6f9613"
-    },
-    # Univers 3 : Écosystème DeFi (Frais 0.30%)
     "UNI_WETH": {
-        "universe": "DeFi",
-        "leg1": "UNI",
-        "leg2": "WETH",
-        "swap_fee": 0.0030,        # 0.30%
-        "pool_liquidity": 45_000_000,
-        "gecko_pool": "0x1d42064fc4beb5f8aaf85f4617ae8b3b5b8bd801"
+        "universe": "DeFi", "leg1": "UNI", "leg2": "WETH",
+        "swap_fee": 0.0030, "pool_liquidity": 11_400_000
     },
     "AAVE_WETH": {
-        "universe": "DeFi",
-        "leg1": "AAVE",
-        "leg2": "WETH",
-        "swap_fee": 0.0030,        # 0.30%
-        "pool_liquidity": 35_000_000,
-        "gecko_pool": "0x5ab53ee1d50eef2c1dd3d5402789cd27bb52c1bb"
-    }
+        "universe": "DeFi", "leg1": "AAVE", "leg2": "WETH",
+        "swap_fee": 0.0030, "pool_liquidity": 5_500_000
+    },
 }
 
 # 3. Paramètres de modélisation et signaux (Extension OU + EWMA)
-EWMA_SPAN = 72             # Fenêtre glissante de 72 heures (3 jours) pour le Z-score
-OPEN_THRESHOLD = 2.0       # Ouverture à +/- 2.0 écarts-types (corrigé du bug d'échelle)
-CLOSE_THRESHOLD = 0.4      # Fermeture à +/- 0.4 écart-type
-ADF_PVALUE_MAX = 0.10      # Seuil de stationnarité du test Augmented Dickey-Fuller
+EWMA_SPAN = 72
+OPEN_THRESHOLD = 2.0
+CLOSE_THRESHOLD = 0.4
+ADF_PVALUE_MAX = 0.10
 
 # 4. Paramètres du portefeuille et d'optimisation
-INITIAL_CAPITAL_PER_ASSET = 25_000.0  # 25 000 USD équivalent par actif (150k$ au total)
-RISK_FREE_RATE = 0.04                 # Taux sans risque annuel (4%)
-LAMBDA_LIST = [0.5, 1.0, 2.0]         # Aversion au risque à tester
+INITIAL_CAPITAL_PER_ASSET = 25_000.0  # 25 000 USD x 7 actifs = 175 000 USD
+RISK_FREE_RATE = 0.04
+LAMBDA_LIST = [0.5, 1.0, 2.0]
 DEFAULT_LAMBDA = 1.0
 
-# 5. Paramètres des coûts de gaz stochastiques (Réseau Ethereum / L2)
-GAS_UNITS_PER_SWAP = 135_000          # Unités de gaz consommées par swap Uniswap V3
-MEAN_GWEI = 3.5                       # Moyenne Gwei (environnement post-Dencun / L2)
-STD_GWEI = 0.45                       # Volatilité log-normale du gaz
-ETH_REFERENCE_PRICE_USD = 3100.0      # Prix de référence ETH pour convertir le gaz en USD
+# 5. Paramètres des coûts de gaz stochastiques
+GAS_UNITS_PER_SWAP = 135_000
+MEAN_GWEI = 3.5
+STD_GWEI = 0.45
+ETH_REFERENCE_PRICE_USD = 3100.0

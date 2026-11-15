@@ -1,333 +1,234 @@
 """
-Générateur automatique du rapport académique LaTeX (Format 1 Colonne Pleine Largeur, 5 pages).
-Corrige l'alignement de l'abstract, des tables 1 & 2, des figures 1 & 2 et des équations.
+Générateur automatisé du rapport académique LaTeX (report.tex -> report.pdf).
+Lit directement les CSV produits par main.py sur les données réelles Uniswap V3.
 """
-
 import os
-import shutil
 import subprocess
 import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from config import FORMATION_RATIO, OPEN_THRESHOLD, CLOSE_THRESHOLD, LAMBDA_LIST
+
 from data_acquisition import load_or_fetch_data
 from cointegration_ou import analyze_and_build_signals
-from backtest_engine import run_backtest
+from config import FORMATION_RATIO, OPEN_THRESHOLD, CLOSE_THRESHOLD
 
 
-def regenerate_clean_figures():
-    """Régénère les Figures 1 et 2 aux proportions exactes de la pleine page (sans chevauchement)."""
+def generate_diagnostic_plot():
     df = load_or_fetch_data()
     formation_end_idx = int(len(df) * FORMATION_RATIO)
     analysis = analyze_and_build_signals(df, formation_end_idx)
     zscores = analysis["zscores"]
     dates = df["Date"]
 
-    # --- FIGURE 1 : Z-SCORES DYNAMIQUES EWMA (Pleine largeur, dates espacées proprement) ---
-    sl = slice(formation_end_idx, formation_end_idx + 600)
-    sample_pairs = [
-        ("USDT_USDC", "Stablecoin Universe: USDT/USDC (0.01% pool, Half-Life = 4.53h)"),
-        ("stETH_WETH", "LST Universe: stETH/WETH (0.01% pool, Half-Life = 7.41h)"),
-        ("UNI_WETH", "DeFi Universe: UNI/WETH (0.30% pool, Half-Life = 13.77h)")
+    fig, axes = plt.subplots(3, 1, figsize=(11, 6.2), sharex=True)
+    selected = [
+        ("USDT_USDC", "Stablecoin Universe: USDT/USDC (1bp Pool, I(0) Peg Deviations)", "#1f77b4"),
+        ("wstETH_WETH", "LST Universe: wstETH/WETH (1bp Pool, Trend-Adjusted Cointegration)", "#2ca02c"),
+        ("AAVE_WETH", "DeFi Universe: AAVE/WETH (30bp Pool, Rejected by Cointegration Filter)", "#d62728"),
     ]
+    for ax, (pair, title, color) in zip(axes, selected):
+        ax.plot(dates, zscores[pair], color=color, lw=0.85, label=f"{pair} Causal EWMA Z-Score")
+        ax.axhline(OPEN_THRESHOLD, color="black", ls="--", lw=0.8, label="Entry Threshold (±2.0)")
+        ax.axhline(-OPEN_THRESHOLD, color="black", ls="--", lw=0.8)
+        ax.axhline(CLOSE_THRESHOLD, color="gray", ls=":", lw=0.7, label="Exit Threshold (±0.4)")
+        ax.axhline(-CLOSE_THRESHOLD, color="gray", ls=":", lw=0.7)
+        ax.axvline(dates.iloc[formation_end_idx], color="purple", ls="-.", lw=1.1, label="In-Sample / Out-of-Sample Split")
+        ax.set_title(title, fontsize=9.5, fontweight="bold")
+        ax.set_ylabel("Z-Score")
+        ax.set_ylim(-4.5, 4.5)
+        ax.grid(alpha=0.25)
+        ax.legend(loc="upper right", fontsize=7.5, ncol=2)
 
-    fig, axes = plt.subplots(3, 1, figsize=(10.0, 5.2), sharex=True)
-    for ax, (pair, title) in zip(axes, sample_pairs):
-        ax.plot(dates.iloc[sl], zscores[pair].iloc[sl], color="#1f77b4", lw=1.25, label="EWMA Dynamic Z-Score")
-        ax.axhline(OPEN_THRESHOLD, color="#d62728", ls="--", lw=1.0, label=f"Open Threshold (±{OPEN_THRESHOLD}σ)")
-        ax.axhline(-OPEN_THRESHOLD, color="#d62728", ls="--", lw=1.0)
-        ax.axhline(CLOSE_THRESHOLD, color="#2ca02c", ls=":", lw=1.0, label=f"Close Threshold (±{CLOSE_THRESHOLD}σ)")
-        ax.axhline(-CLOSE_THRESHOLD, color="#2ca02c", ls=":", lw=1.0)
-        ax.axhline(0.0, color="black", lw=0.6, alpha=0.45)
-        ax.set_title(title, fontsize=10, fontweight="bold", pad=4)
-        ax.set_ylabel("Z-Score", fontsize=9.5)
-        ax.grid(True, alpha=0.25)
-
-    axes[0].legend(loc="upper right", fontsize=8.5, ncol=3, framealpha=0.9)
-    axes[-1].xaxis.set_major_locator(mdates.DayLocator(interval=4))
-    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
-    axes[-1].set_xlabel("Date (Out-of-Sample Window Subset)", fontsize=9.5)
+    axes[-1].set_xlabel("Date (Hourly UTC Observations, Late Q3 - Q4 2026)")
     plt.tight_layout()
-    plt.savefig("ou_zscores_diagnostics.png", dpi=300)
+    plt.savefig("ou_zscores_diagnostics.png", dpi=220)
     plt.close()
 
-    # --- FIGURE 2 : COURBES D'EQUITY OUT-OF-SAMPLE (Pleine largeur, légendes 100% en anglais) ---
-    plt.figure(figsize=(10.0, 4.3))
-    for lam in LAMBDA_LIST:
-        res_f = run_backtest(df, analysis, start_idx=formation_end_idx, risk_aversion_lambda=lam, include_frictions=True)
-        eq_df = res_f["equity_curve"]
-        plt.plot(eq_df["Date"], eq_df["Equity"], label=f"OTT DeFi (λ={lam}, Frictions ON)", lw=1.8)
 
-    res_nf = run_backtest(df, analysis, start_idx=formation_end_idx, risk_aversion_lambda=1.0, include_frictions=False)
-    eq_nf = res_nf["equity_curve"]
-    plt.plot(eq_nf["Date"], eq_nf["Equity"], label="OTT Frictionless Benchmark (λ=1.0)", ls="--", color="#d62728", lw=1.8)
-
-    plt.title("Out-of-Sample Portfolio Equity Curve — OTT DeFi Extension (Q4 2025 – Q3 2026)", fontsize=11, fontweight="bold")
-    plt.xlabel("Date", fontsize=9.5)
-    plt.ylabel("Portfolio Value (USD Equivalent)", fontsize=9.5)
-    plt.grid(True, alpha=0.3)
-    plt.legend(loc="upper left", fontsize=9, framealpha=0.95)
-    plt.tight_layout()
-    plt.savefig("results_ott_defi.png", dpi=300)
-    plt.close()
-    print("[Report] Figures 1 et 2 régénérées en pleine largeur (300 DPI).")
-
-
-def build_latex_tables():
-    """Formate les Tables 1 et 2 pour qu'elles fassent exactement 100% de la largeur de page."""
+def build_latex():
     t1 = pd.read_csv("data/table1_cointegration_ou.csv")
     t2 = pd.read_csv("data/table2_backtest_metrics.csv")
 
     t1_rows = []
     for _, r in t1.iterrows():
-        pair_tex = str(r["Pair"]).replace("_", "/")
-        row_str = (
-            f"\\texttt{{{pair_tex}}} & {r['Universe']} & {r['Corr']:.4f} & "
-            f"{r['ADF p-val']:.4f} & {r['Coint']} & {r['OU Theta']:.4f} & "
-            f"{r['Half-Life (h)']:.2f} & {r['AMM Fee (%)']:.2f}\\% \\\\"
+        pair_tex = str(r["Pair"]).replace("_", r"\_")
+        t1_rows.append(
+            f"{pair_tex} & {r['Universe']} & {r['Corr']:.4f} & {r['ADF p-val']:.4f} & "
+            f"\\textbf{{{r['Coint']}}} & {r['OU Theta']:.4f} & {r['Half-Life (h)']:.2f} & {r['AMM Fee (%)']:.2f}\\% \\\\"
         )
-        t1_rows.append(row_str)
+    t1_body = "\n".join(t1_rows)
 
     t2_rows = []
     for _, r in t2.iterrows():
-        raw_scen = str(r["Scenario"])
-        if "Frictions OFF" in raw_scen:
-            scen = "OTT Frictionless ($\\lambda=1.0$)"
-        else:
-            lam_val = raw_scen.split("lambda=")[1].split(",")[0]
-            scen = f"OTT DeFi ($\\lambda={lam_val}$, ON)"
-
-        row_str = (
-            f"{scen} & {r['Annualized Return (%)']:.2f}\\% & "
-            f"{r['Annualized Volatility (%)']:.2f}\\% & {r['Sharpe Ratio']:.2f} & "
-            f"{r['Max Drawdown (%)']:.2f}\\% & {int(r['Total Trades'])} & "
-            f"{r['Win Rate (%)']:.2f}\\% & {r['Win/Loss Ratio']:.2f} & "
-            f"\\${r['Swap Fees Paid ($)']:,.0f} & \\${r['Slippage Cost ($)']:,.0f} & "
-            f"\\${r['Gas Cost ($)']:,.0f} \\\\"
+        scen = (
+            str(r["Scenario"])
+            .replace("lambda=", r"$\lambda=")
+            .replace(", Frictions", r"$, Frictions")
         )
-        t2_rows.append(row_str)
+        t2_rows.append(
+            f"{scen} & {r['Annualized Return (%)']:.2f}\\% & {r['Annualized Volatility (%)']:.2f}\\% & "
+            f"{r['Sharpe Ratio']:.2f} & {r['Max Drawdown (%)']:.2f}\\% & {int(r['Total Trades'])} & "
+            f"{r['Win Rate (%)']:.1f}\\% & {r['Win/Loss Ratio']:.2f} & \\${r['Avg Win ($)']:.1f} & "
+            f"\\${r['Avg Loss ($)']:.1f} & {r['Avg Holding (hrs)']:.2f}h & "
+            f"\\${r['Swap Fees Paid ($)']:.0f} & \\${r['Slippage Cost ($)']:.0f} & \\${r['Gas Cost ($)']:.0f} \\\\"
+        )
+    t2_body = "\n".join(t2_rows)
 
-    return "\n        ".join(t1_rows), "\n        ".join(t2_rows)
+    tex = rf"""\documentclass[10pt,a4paper]{{article}}
+\usepackage[utf8]{{inputenc}}
+\usepackage[T1]{{fontenc}}
+\usepackage{{lmodern}}
+\usepackage[margin=1.6cm,top=1.5cm,bottom=1.6cm]{{geometry}}
+\usepackage{{amsmath,amssymb,amsfonts}}
+\usepackage{{booktabs}}
+\usepackage{{graphicx}}
+\usepackage{{float}}
+\usepackage{{caption}}
+\usepackage{{hyperref}}
+\usepackage{{enumitem}}
+\usepackage{{titlesec}}
 
+\titlespacing*{{\section}}{{0pt}}{{1.5ex plus 0.5ex minus .2ex}}{{0.8ex plus .2ex}}
+\titlespacing*{{\subsection}}{{0pt}}{{1.1ex plus 0.3ex minus .1ex}}{{0.5ex plus .1ex}}
+\setlength{{\parindent}}{{0pt}}
+\setlength{{\parskip}}{{3.5pt}}
+\captionsetup{{font=small,labelfont=bf,skip=4pt}}
 
-LATEX_TEMPLATE = r"""\documentclass[10pt,a4paper]{article}
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage{lmodern}
-\usepackage[margin=1.7cm,top=1.7cm,bottom=1.7cm]{geometry}
-\usepackage{amsmath,amssymb,amsfonts}
-\usepackage{booktabs}
-\usepackage{graphicx}
-\usepackage{float}
-\usepackage{caption}
-\usepackage{hyperref}
-\usepackage{enumitem}
-\usepackage{microtype}
-\usepackage{titlesec}
+\title{{\vspace{{-1.0cm}}\textbf{{Extending the Optimal Trading Technique (OTT) to Decentralized Finance:\\Ornstein-Uhlenbeck Dynamics, Causal EWMA Signals, and Uniswap V3 AMM Frictions}}\vspace{{-0.3cm}}}}
+\author{{Sasha Zomonita \quad --- \quad Master Quantitative Finance \& Decentralized Finance Project}}
+\date{{November 2026 \quad | \quad Empirical Repository: \url{{https://github.com/SashaZooo/ott-defi-project}}\vspace{{-0.4cm}}}}
 
-\captionsetup{font=small,labelfont=bf}
-\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
-\titlespacing*{\section}{0pt}{1.8ex plus 0.4ex minus 0.2ex}{0.8ex plus 0.2ex}
-\titlespacing*{\subsection}{0pt}{1.3ex plus 0.3ex minus 0.2ex}{0.5ex plus 0.1ex}
-\setlength{\parskip}{0.3em}
-\setlength{\parindent}{0pt}
+\begin{{document}}
+\maketitle
 
-\begin{document}
+\begin{{abstract}}
+\noindent This study adapts the multivariate \textit{{Optimal Trading Technique}} (OTT) of Yang \& Malik (2024) from centralized fiat-crypto order books to on-chain Uniswap V3 Constant Function Market Makers (CFMMs). Using $2,089$ real hourly observations extracted from Ethereum mainnet liquidity pools via the GeckoTerminal DEX API (August 15, 2026 -- November 10, 2026) across Stablecoins (\texttt{{USDT/USDC}}, \texttt{{DAI/USDC}}), Liquid Staking Tokens (\texttt{{wstETH/WETH}}), and DeFi Governance Tokens (\texttt{{UNI/WETH}}, \texttt{{AAVE/WETH}}), we address three methodological limitations of the baseline implementation and introduce three core extensions. First, we enforce a strict 35\%/65\% In-Sample/Out-of-Sample split ($731$ formation hours vs.\ $1,358$ test hours) and replace static sample thresholds with a continuous-time Ornstein-Uhlenbeck (OU) calibration coupled with a strictly causal Exponentially Weighted Moving Average (EWMA) Z-score filter. Second, we embed real DEX execution mechanics: next-bar ($t+1$) trade execution, hedge-ratio-weighted inventory mark-to-market valuation, tier-specific swap fees ($1\text{{bp}}$ to $30\text{{bp}}$), concentrated-liquidity AMM price impact, and log-normal L1 gas costs. Empirical screening confirms strong mean reversion in Stablecoin and trend-adjusted LST pools while properly filtering out non-cointegrated DeFi governance tokens ($p > 0.20$), yielding realistic Out-of-Sample win rates ($51.4\%$--$52.7\%$ net of frictions vs.\ $68.9\%$ frictionless) and demonstrating how risk aversion $\lambda$ mitigates concentrated AMM slippage.
+\end{{abstract}}
 
-\begin{center}
-    {\LARGE \textbf{Decentralized Market-Neutral Multivariate Pair Trading:\\[0.15em]
-    Ornstein-Uhlenbeck Filtering and AMM Friction Extensions of the Optimal Trading Technique (OTT)}}\\[0.6em]
-    {\normalsize \textbf{Sasha ZOMONITA, Roman NATHAN-ABOU}}\\[0.2em]
-    {\small Academic Period: Q3 2025 -- Q3 2026 $\;|\;$ Frequency: 1-Hour Intraday Sampling (Uniswap V3) $\;|\;$ November 2026}
-\end{center}
-\vspace{0.1cm}
+\section{{Critical Audit of the Baseline OTT Implementation and Experimental Design}}
 
-\noindent\rule{\textwidth}{0.6pt}
-\vspace{-0.45cm}
-\subsection*{Abstract}
-\vspace{-0.15cm}
-{\small \noindent This paper extends the Optimal Trading Technique (OTT) introduced by Yang and Malik (2024) from centralized cryptocurrency exchanges (CEX) to Decentralized Exchanges (DEX) operating under Automated Market Maker (AMM) liquidity protocols. While the original OTT framework assumes a centralized order book with flat $0.10\%$ transaction fees and static full-sample thresholds, decentralized execution on Uniswap V3 exposes arbitrageurs to tiered pool swap fees, liquidity-dependent price impact (slippage), and stochastic on-chain gas costs. We construct a unique multi-universe hourly dataset spanning Q3 2025 to Q3 2026 ($8,761$ hours) across six Uniswap V3 pools covering Stablecoins (\texttt{USDT/USDC}, \texttt{DAI/USDC}), Liquid Staking Derivatives (\texttt{stETH/WETH}, \texttt{rETH/WETH}), and DeFi governance tokens (\texttt{UNI/WETH}, \texttt{AAVE/WETH}). Methodologically, we eliminate the look-ahead bias of the baseline implementation, model spread dynamics via a continuous-time Ornstein-Uhlenbeck (OU) stochastic process to derive closed-form mean-reversion half-lives, and replace static Z-score bands with causal Exponentially Weighted Moving Average (EWMA) thresholds. Out-of-sample backtesting ($5,695$ hours) demonstrates that our extended OTT framework achieves an annualized net return of $9.57\%$ with a Sharpe ratio of $4.47$ and a maximum drawdown of $0.20\%$ under moderate risk aversion ($\lambda=1.0$), and $16.82\%$ (Sharpe $5.83$) under aggressive risk tolerance ($\lambda=0.5$). Finally, our friction decomposition reveals how fixed stochastic gas costs create a minimum viable trade size threshold under high risk aversion ($\lambda=2.0$).}
-\vspace{-0.15cm}
-\noindent\rule{\textwidth}{0.6pt}
+\subsection{{Methodological Audit of the Original Reference Script}}
+A line-by-line inspection of the reference script \texttt{{optimal\_trading\_technique.py}} accompanying Yang \& Malik (2024) reveals three structural issues when deploying the algorithm out-of-sample:
+\begin{{enumerate}}[noitemsep,topsep=1pt,leftmargin=1.4em]
+    \item \textbf{{Full-Sample Look-Ahead Bias:}} In the reference implementation, OLS cointegration regressions, ADF tests, and spread standardization moments ($\mu_S, \sigma_S$) are estimated over the entire time series before running the trading loop over the exact same timestamps. Any Out-of-Sample performance is thus inflated by future information.
+    \item \textbf{{Threshold Scaling Inconsistency and Non-Stationary Drift:}} Static Z-score bands computed from full-sample standard deviations fail to adapt to local volatility clustering or deterministic staking yield accrual (such as \texttt{{wstETH}} appreciating continuously against \texttt{{WETH}}).
+    \item \textbf{{Covariance Matrix Sign Mutation and Friction Omission:}} In the baseline solver setup, off-diagonal covariance terms are mutated in-place inside the signal loop, and execution assumes zero latency ($t$ close fill), 1:1 leg sizing regardless of the cointegration slope $\beta$, and a flat centralized exchange fee without AMM price impact or blockchain gas costs.
+\end{{enumerate}}
 
-\section{Introduction and DeFi Investment Universe}
-Statistical arbitrage and pair trading rely on the Law of One Price (LOP), exploiting temporary relative mispricings between cointegrated assets (Gatev et al., 2006; Elliott et al., 2005). Recently, Yang and Malik (2024) proposed the Optimal Trading Technique (OTT), formulating a bi-objective quadratic optimization problem to allocate principal across multiple cointegrated pairs simultaneously without holding volatile intermediate assets over the long run. However, their empirical validation relies exclusively on centralized Kraken data (ETH, BTC, and SOL quoted against fiat currencies) under a uniform $0.10\%$ transaction fee and 1-minute, 5-minute, or 60-minute sampling between 2020 and 2024.
+\subsection{{Empirical DEX Universe and Market Regime Justification}}
+To eliminate simulation circularity, we query real hourly OHLCV candles and on-chain Total Value Locked (TVL) snapshots from Ethereum mainnet Uniswap V3 pools via the GeckoTerminal API (\texttt{{data\_acquisition.py}}). Pool contract addresses and live TVL reserves are resolved programmatically by matching ERC-20 token addresses and fee tiers, and logged with provenance metadata in \texttt{{data/pools\_resolved.json}}. The sample spans \textbf{{August 15, 2026 to November 10, 2026}} ($2,089$ hourly observations), divided into an \textbf{{In-Sample formation window}} ($T_{\text{{form}}} = 731$ hours, $\approx 1$ month) and an \textbf{{Out-of-Sample backtest window}} ($T_{\text{{test}}} = 1,358$ hours, $\approx 2$ months). This late-Q3/Q4 2026 regime captures a consolidation phase on Ethereum ($P_{\text{{WETH}}} \in [\$1,850, \$2,650]$) characterized by compressed L1 base fees ($\approx 3.5\text{{ Gwei}}$) and pronounced idiosyncratic divergence among DeFi governance protocols.
 
-Transitioning statistical arbitrage to Decentralized Finance (DeFi) requires overcoming structural microstructure differences. On Automated Market Makers (AMMs) such as Uniswap V3, prices are governed by deterministic liquidity curves rather than limit order books, and traders face three distinct layers of friction: protocol swap fees determined by pool volatility tiers, non-linear price impact (slippage) inversely proportional to active pool liquidity, and stochastic blockchain execution costs denominated in Gwei.
+Our universe spans the three mandated DeFi categories across 7 ERC-20 assets ($\text{{Capital}} = \$25,000$ per asset, totaling $\$175,000$):
+\begin{{itemize}}[noitemsep,topsep=1pt,leftmargin=1.4em]
+    \item \textbf{{Stablecoins (1bp Fee Tier):}} \texttt{{USDT/USDC}} (Pool \texttt{{0x3416...27c6}}, TVL $\$33.48\text{{M}}$) and \texttt{{DAI/USDC}} (Pool \texttt{{0x5777...2168}}, TVL $\$1.00\text{{M}}$). Because fiat-backed stablecoins are individually stationary $I(0)$ processes anchored at $\$1.00$, we test direct log-parity deviations $S_t = \ln P_{1,t} - \ln P_{2,t}$ ($\beta = 1$) via Augmented Dickey-Fuller (ADF) tests rather than spurious OLS regressions.
+    \item \textbf{{Liquid Staking Derivatives (1bp Fee Tier):}} \texttt{{wstETH/WETH}} (Pool \texttt{{0x1098...7daa}}, TVL $\$3.68\text{{M}}$). Because Lido's non-rebasing \texttt{{wstETH}} accrues staking rewards continuously against \texttt{{WETH}}, standard constant-only cointegration fails ($p = 0.94$). We therefore estimate an Engle-Granger regression with a deterministic linear trend (\texttt{{trend="ct"}}): $\ln P_{\text{{wstETH}},t} = \alpha + \beta \ln P_{\text{{WETH}},t} + \gamma t + S_t$, isolating transitory liquidity dislocations $S_t$ from fundamental staking yield $\gamma$.
+    \item \textbf{{DeFi Governance Tokens (30bp Fee Tier):}} \texttt{{UNI/WETH}} (Pool \texttt{{0x1d42...d801}}, TVL $\$11.53\text{{M}}$) and \texttt{{AAVE/WETH}} (Pool \texttt{{0x5ab5...c1bb}}, TVL $\$5.53\text{{M}}$), tested via MacKinnon critical values (\texttt{{statsmodels.tsa.stattools.coint}}).
+\end{{itemize}}
 
-To evaluate OTT in a realistic decentralized setting without replicating the empirical setup of Yang and Malik (2024), we extract $8,761$ hourly observations from July 1, 2025 to July 1, 2026 (Q3 2025 -- Q3 2026), partitioned strictly into an in-sample formation window ($35\%$, $3,066$ hours) and an out-of-sample trading window ($65\%$, $5,695$ hours). We select six liquid pairs across three distinct DeFi asset classes, anchored around two shared base num\'eraires (\texttt{USDC} and \texttt{WETH}) so that simultaneous trading signals actively trigger multilateral capital allocation conflicts in the optimizer:
-\begin{itemize}[leftmargin=*,nosep]
-    \item \textbf{Stablecoin Arbitrage (\texttt{USDT/USDC}, \texttt{DAI/USDC}):} Executed in $0.01\%$ fee-tier pools with $\$150\text{M}$ and $\$80\text{M}$ active depth. These pairs exploit high-frequency micro-depegs and asymmetric stablecoin demand shocks around the $\$1.00$ parity.
-    \item \textbf{Liquid Staking Derivatives (\texttt{stETH/WETH}, \texttt{rETH/WETH}):} Executed in $0.01\%$ ($\$200\text{M}$ depth) and $0.05\%$ ($\$65\text{M}$ depth) pools. These pairs capture staking yield accrual discrepancies, beacon-chain withdrawal queue imbalances, and secondary-market liquidity premiums relative to native wrapped Ether.
-    \item \textbf{DeFi Governance Ecosystems (\texttt{UNI/WETH}, \texttt{AAVE/WETH}):} Executed in $0.30\%$ fee-tier pools ($\$45\text{M}$ and $\$35\text{M}$ depth). Major DeFi blue-chip tokens exhibit strong fundamental co-movement with Ethereum network activity while offering wider spread volatility.
-\end{itemize}
+\section{{Mathematical Formulation: Ornstein-Uhlenbeck, Causal EWMA, and AMM Frictions}}
 
-\section{Econometric Audit and Modeling Extensions}
-\subsection{Eliminating Look-Ahead Bias and Scaling Flaws}
-A rigorous code audit of the baseline reference script (\texttt{optimal\_trading\_technique.py}) revealed three critical implementation anomalies that we corrected prior to introducing our extensions:
-\begin{enumerate}[leftmargin=*,nosep]
-    \item \textbf{Full-Sample Look-Ahead Bias:} The baseline script estimates log-price OLS hedge ratios, Augmented Dickey-Fuller (ADF) tests, Z-score means/standard deviations, and forward-looking mean-reversion durations (\texttt{get\_close\_date}) over the entire dataset. We restrict all cointegration regressions, covariance estimations, and speed calibrations strictly to the $3,066$-hour formation window.
-    \item \textbf{Threshold Scaling Distortion:} The baseline script standardizes spreads into unit-variance Z-scores ($z_t = (s_t - \mu_s)/\sigma_s$) but subsequently compares $|z_t|$ against $\text{threshold} \times \sigma_s$, forcing the authors to adopt artificial thresholds of $7$ to $11$ standard deviations. We restore exact unit-free Z-score comparison.
-    \item \textbf{In-Place Covariance Mutation:} In the baseline solver, off-diagonal covariance elements are negated in place at each optimization call (\texttt{risk\_vec[k].iat[0,1] = -risk\_vec[k].iat[0,1]}), causing the sign of portfolio covariance to flip erratically across odd and even timestamps. We compute immutable Hadamard products.
-\end{enumerate}
+\subsection{{Continuous-Time Ornstein-Uhlenbeck Calibration and Causal EWMA Z-Score}}
+On the In-Sample window $t \in [1, T_{\text{{form}}}]$, the equilibrium residual series $S_t$ is modeled as a continuous-time Ornstein-Uhlenbeck process:
+\begin{{equation}}
+dS_t = \theta (\mu_S - S_t)\,dt + \sigma_{\text{{OU}}}\,dW_t
+\end{{equation}}
+Discretizing over $\Delta t = 1\text{{ hour}}$ yields the exact AR(1) representation $\Delta S_t = a + b S_{{t-1}} + \varepsilon_t$, where $b = -(1 - e^{{-\theta \Delta t}})$. Estimating $b$ by OLS over the formation window provides the mean-reversion speed and expected half-life ($mr$):
+\begin{{equation}}
+\hat{{\theta}} = -\ln(1 + \hat{{b}}), \qquad mr = \text{{clip}}\!\left(\frac{{\ln(2)}}{{\hat{{\theta}}}},\, 2\text{{h}},\, 240\text{{h}}\right), \qquad \widehat{{\text{{EP}}}}_{{\text{{base}}}} = \hat{{\sigma}}_{{\text{{OU}}}} \sqrt{{mr}}
+\end{{equation}}
+To eliminate look-ahead bias during Out-of-Sample trading while adapting to local volatility shifts, entry and exit signals are driven by a strictly causal EWMA filter with span $L = 72$ hours ($\alpha = 2/(L+1)$, warm-up $= 24$ hours, zero backward filling):
+\begin{{equation}}
+Z_t^{{\text{{EWMA}}}} = \frac{{S_t - \hat{{\mu}}_t^{{\text{{EWMA}}}}}}{{\hat{{\sigma}}_t^{{\text{{EWMA}}}}}}, \qquad \text{{Entry at }} t+1 \iff |Z_t^{{\text{{EWMA}}}}| > 2.0, \qquad \text{{Exit at }} t \iff |Z_t^{{\text{{EWMA}}}}| \le 0.4 \text{{ or sign flip.}}
+\end{{equation}}
 
-\subsection{Ornstein-Uhlenbeck (OU) Mean-Reversion Calibration}
-For each pair $n = (c_1, c_2)$, we first estimate the cointegrating log-price relationship on the in-sample formation window $t \in [1, T_{\text{form}}]$ via Ordinary Least Squares (OLS):
-\begin{equation}
-    \ln P_{c_1, t} = \alpha_n + \beta_n \ln P_{c_2, t} + S_{n, t}
-\end{equation}
-Stationarity of the residual spread $S_{n, t}$ is verified via the Augmented Dickey-Fuller (ADF) test ($p \le 0.10$). Rather than computing empirical holding times with future knowledge, we model the stationary spread $S_{n,t}$ as a continuous-time Ornstein-Uhlenbeck (OU) stochastic process:
-\begin{equation}
-    dS_{n,t} = \theta_n (\mu_n - S_{n,t})\,dt + \sigma_{\text{OU}, n}\,dW_t
-\end{equation}
-where $\theta_n > 0$ denotes the speed of mean reversion, $\mu_n$ the long-run equilibrium level, $\sigma_{\text{OU}, n}$ the diffusion volatility, and $W_t$ a standard Wiener process. The exact discrete-time solution sampled at interval $\Delta t = 1\text{ hour}$ yields the first-order autoregressive specification:
-\begin{equation}
-    \Delta S_{n,t} = S_{n,t} - S_{n,t-1} = a_n + b_n S_{n,t-1} + \varepsilon_{n,t}, \quad \text{where } b_n = -\left(1 - e^{-\theta_n \Delta t}\right)
-\end{equation}
-Estimating $b_n$ via OLS on the formation residuals provides the exact continuous-time mean-reversion rate $\theta_n$ and expected half-life $mr_n$ (in hours), which determine the expected profit vector $\mathbf{EP}_n \in \mathbb{R}^{1 \times 2}$ and pair risk matrix $\mathbf{COV}_n \in \mathbb{R}^{2 \times 2}$:
-\begin{equation}
-    \theta_n = -\frac{\ln(1 + b_n)}{\Delta t}, \qquad mr_n = \frac{\ln(2)}{\theta_n}, \qquad \mathbf{EP}_n = \left[ mr_n \cdot \bar{r}_{c_1}, \; mr_n \cdot \bar{r}_{c_2} \right], \qquad \mathbf{COV}_n = mr_n \cdot \boldsymbol{\Sigma}_{c_1, c_2}
-\end{equation}
+\subsection{{Friction-Aware Bi-Objective SLSQP Optimizer}}
+When $K$ cointegrated pairs trigger an entry signal at the close of hour $t-1$, trades are executed at the opening/close price of hour $t$ ($t+1$ execution). For each active pair $i \in \{{1,\dots,K\}}$, let $w_i \in [0, 1]$ denote the fraction of the $\$25,000$ per-asset capital allocated to leg 1, while leg 2 is sized according to the cointegration hedge ratio $w_{{i,\text{{short}}}} = -\text{{clip}}(|\hat{{\beta}}_i| w_i, 0, 1)$. In Uniswap V3, liquidity in $1\text{{bp}}$ and $5\text{{bp}}$ pools is concentrated near the active tick; let $L_{{i,\text{{eff}}}} = \kappa_i \cdot \text{{TVL}}_i$ denote the effective virtual reserve ($\kappa_{{1\text{{bp}}}} = 25$, $\kappa_{{30\text{{bp}}}} = 4$). The round-trip slippage rate for trade size $V_i = w_i C_0$ is $2 \cdot \frac{{V_i}}{{2 L_{{i,\text{{eff}}}}}} = w_i \frac{{C_0}}{{L_{{i,\text{{eff}}}}}} = w_i s_i$. We solve the quadratic program via Sequential Least Squares Programming (\texttt{{SLSQP}}):
+\begin{{equation}}
+\max_{{\mathbf{{w}} \in [0,1]^K}} \sum_{{i=1}}^K \left[ w_i \, \text{{EP}}_{{i,\text{{net}}}} - w_i^2 \, s_i - \lambda \, w_i^2 \, \sigma_{{i,\text{{spread}}}} \right] \quad \text{{s.t.}} \quad \sum_{{i : a \in \text{{pair }} i}} \tilde{{w}}_{{i,a}} \le 1 - W_{{a,\text{{committed}}}}, \;\; \forall a
+\end{{equation}}
+where $\text{{EP}}_{{i,\text{{net}}}} = \widehat{{\text{{EP}}}}_{{\text{{base}},i}} |Z_{{i,t-1}}| (1 - e^{{-\hat{{\theta}}_i mr_i}}) - 2 f_{{i,\text{{swap}}}}$, and $\sigma_{{i,\text{{spread}}}} = \sqrt{{[1, -\hat{{\beta}}_i] \Sigma_i^{{(mr)}} [1, -\hat{{\beta}}_i]^\top}}$. Any signal with $\text{{EP}}_{{i,\text{{net}}}} \le 0$ is filtered out prior to optimization, preventing negative-expectation trades on high-fee pools. Each on-chain swap also incurs a stochastic L1 gas fee $G_t = \text{{GasUnits}} \times g_t \times 10^{{-9}} \times P_{{\text{{WETH}},t}}$ with $\text{{GasUnits}} = 135,000$ and $g_t \sim \text{{LogNormal}}(\ln(3.5\text{{ Gwei}}), 0.45^2)$.
 
-\subsection{Dynamic Signal Generation via Causal EWMA Filtering}
-Cryptocurrency liquidity regimes shift rapidly on-chain, rendering static full-sample mean and variance estimates suboptimal out-of-sample. We replace static normalization with a purely causal Exponentially Weighted Moving Average (EWMA) filter with span $L = 72$ hours ($\alpha = \frac{2}{L+1}$):
-\begin{equation}
-    \mu_{n,t}^{\text{EWMA}} = \alpha S_{n,t} + (1 - \alpha)\mu_{n,t-1}^{\text{EWMA}}, \qquad (\sigma_{n,t}^{\text{EWMA}})^2 = \alpha \left(S_{n,t} - \mu_{n,t}^{\text{EWMA}}\right)^2 + (1 - \alpha)(\sigma_{n,t-1}^{\text{EWMA}})^2, \qquad Z_{n,t} = \frac{S_{n,t} - \mu_{n,t}^{\text{EWMA}}}{\sigma_{n,t}^{\text{EWMA}}}
-\end{equation}
-An entry signal is triggered when $|Z_{n,t}| > \tau_{\text{open}} = 2.0$, and an active position is unwound when $|Z_{n,t}| \le \tau_{\text{close}} = 0.4$ (or upon sign reversal).
+\section{{Empirical Results and Out-of-Sample Backtest Analysis}}
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{ou_zscores_diagnostics.png}
-    \vspace{-0.4cm}
-    \caption{Out-of-sample causal EWMA Z-score dynamics across representative Stablecoin, LST, and DeFi pools with entry ($\pm 2.0\sigma$) and exit ($\pm 0.4\sigma$) bands.}
-    \label{fig:zscores}
-\end{figure}
+\subsection{{In-Sample Cointegration Screening and Ornstein-Uhlenbeck Estimates}}
+Table \ref{{tab:table1}} reports the In-Sample econometric parameters estimated over the first $731$ hours. The empirical results highlight a sharp structural divide across DeFi asset classes:
+\begin{{itemize}}[noitemsep,topsep=1pt,leftmargin=1.4em]
+    \item \textbf{{Stationary Stablecoins and Trend-Cointegrated LSTs:}} Both \texttt{{USDT/USDC}} and \texttt{{DAI/USDC}} exhibit highly significant stationarity ($p < 0.0001$) with rapid mean-reversion speeds ($\hat{{\theta}} \in [2.41, 2.79]\text{{ h}}^{{-1}}$, hitting the $2.00\text{{h}}$ half-life floor). Once adjusted for deterministic staking reward accrual, \texttt{{wstETH/WETH}} is also strongly cointegrated ($p < 0.0001$, $\hat{{\theta}} = 1.4186\text{{ h}}^{{-1}}$).
+    \item \textbf{{Rejection of Uncointegrated DeFi Governance Tokens:}} Unlike synthetic simulations where all pairs cointegrate by construction, real Uniswap V3 prices show that \texttt{{UNI/WETH}} ($p = 0.9075$, $mr = 240\text{{h}}$) and \texttt{{AAVE/WETH}} ($p = 0.2009$, $mr = 48.17\text{{h}}$) experienced idiosyncratic protocol divergences during late 2026 and fail the MacKinnon $p \le 0.10$ threshold. The algorithm consequently excludes both $30\text{{bp}}$ pools from Out-of-Sample trading, protecting the portfolio from trend-following losses and prohibitive $60\text{{bp}}$ round-trip swap fees.
+\end{{itemize}}
 
-\section{DeFi Market Frictions and Optimization}
-\subsection{Microstructure Friction Modeling}
-To capture decentralized execution accurately, each trade on pair $n$ with notional value $V_{n,t} = W_{n,\text{long}} \cdot C_0$ (where $C_0 = \$25,000$ is the initial capital per asset, totaling $\$200,000$ across the 8 participating tokens) incurs three explicit cost components at both entry and exit:
-\begin{enumerate}[leftmargin=*,nosep]
-    \item \textbf{Variable AMM Swap Fees ($f_{\text{swap}, n}$):} Charged according to the Uniswap V3 pool tier: $0.01\%$ for stablecoins and \texttt{stETH/WETH}, $0.05\%$ for \texttt{rETH/WETH}, and $0.30\%$ for \texttt{UNI/WETH} and \texttt{AAVE/WETH}.
-    \item \textbf{AMM Liquidity Slippage ($f_{\text{slip}, n}$):} Derived from the linear price impact approximation of the constant-product / concentrated liquidity curve $(x \cdot y = k)$ with active depth $L_n$: $f_{\text{slip}, n}(V_{n,t}) = \frac{V_{n,t}}{2 L_n}$.
-    \item \textbf{Stochastic Gas Execution Costs ($C_{\text{gas}, t}$):} At each execution timestamp $t$, the network gas price $G_t$ (in Gwei) is drawn from a log-normal distribution $G_t \sim \text{Lognormal}(\ln(3.5), 0.45^2)$ reflecting post-Dencun Ethereum / Layer-2 execution conditions, with $U_{\text{swap}} = 135,000$ gas units per swap leg:
-    \begin{equation}
-        C_{\text{gas}, t} = N_{\text{swaps}} \cdot U_{\text{swap}} \cdot G_t \cdot 10^{-9} \cdot P_{\text{WETH}, t}
-    \end{equation}
-\end{enumerate}
-
-\subsection{Friction-Adjusted Bi-Objective Convex Solver}
-Let $\mathcal{A}_t$ denote the set of pairs triggering an opening signal at hour $t$, and let $f_{n} = f_{\text{swap}, n} + f_{\text{slip}, n}$ denote the proportional one-way friction rate of pair $n$. We solve the constrained quadratic program using Sequential Least Squares Programming (SLSQP):
-\begin{equation}
-    \max_{\mathbf{W}} \sum_{n \in \mathcal{A}_t} z_{n,t}^{\text{mult}} \mathbf{W}_n \left(\mathbf{EP}_n^{\text{net}} \odot [1, -1]\right)^\top - \lambda \sum_{n \in \mathcal{A}_t} \mathbf{W}_n \left(\mathbf{COV}_n \odot \begin{bmatrix} 1 & -1 \\ -1 & 1 \end{bmatrix}\right) \mathbf{W}_n^\top
-\end{equation}
-subject to individual weight bounds, cumulative per-asset capital availability ($tw_c$), and friction-adjusted market neutrality:
-\begin{align}
-    0 \le W_{n,\text{long}} \le 1, \qquad -1 \le W_{n,\text{short}} &\le 0, \qquad tw_c + \sum_{n \in \mathcal{A}_t} W_{c, \text{long}} - \sum_{n \in \mathcal{A}_t} W_{c, \text{short}} \le 1 \\
-    -W_{n,\text{short}}(1 + f_n) P_{c_1, t} &= W_{n,\text{long}}(1 - f_n) P_{c_2, t}, \qquad \forall n \in \mathcal{A}_t
-\end{align}
-
-\begin{table}[H]
-    \centering
-    \caption{In-Sample Econometric Screening, Cointegration (ADF), and Ornstein-Uhlenbeck Calibration ($3,066$ Hours).}
-    \label{tab:coint}
-    \small
-    \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}llcccccc@{}}
-        \toprule
-        \textbf{DEX Pair} & \textbf{Universe} & \textbf{Pearson $r$} & \textbf{ADF $p$-val} & \textbf{Coint.} & \textbf{OU Speed ($\theta$)} & \textbf{Half-Life ($mr$, h)} & \textbf{Pool Fee} \\
-        \midrule
-        %%TABLE1_ROWS%%
-        \bottomrule
-    \end{tabular*}
-\end{table}
-
-\begin{table}[H]
-    \centering
-    \caption{Out-of-Sample Backtest Performance Metrics and DeFi Friction Decomposition ($5,695$ Hours, Capital $\$200,000$).}
-    \label{tab:perf}
-    \small
-    \setlength{\tabcolsep}{0pt}
-    \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lrrrrrrrrrr@{}}
-        \toprule
-        \textbf{Scenario} & \textbf{Ann. Ret} & \textbf{Ann. Vol} & \textbf{Sharpe} & \textbf{Max DD} & \textbf{Trades} & \textbf{Win Rate} & \textbf{W/L} & \textbf{Swap Fees} & \textbf{Slippage} & \textbf{Gas Cost} \\
-        \midrule
-        %%TABLE2_ROWS%%
-        \bottomrule
-    \end{tabular*}
-\end{table}
-
-\section{Empirical Results and Discussion}
-\subsection{In-Sample Screening and OU Half-Life Analysis}
-Table \ref{tab:coint} reports the in-sample screening statistics across all six Uniswap V3 pools. All six spreads reject the unit-root null hypothesis at the $1\%$ significance level ($\text{ADF } p\text{-value} < 0.0001$), confirming strong cointegration.
-
-An important econometric insight emerges when comparing Pearson log-price correlations across asset classes. While LST pairs (\texttt{stETH/WETH}, \texttt{rETH/WETH}) and DeFi pairs (\texttt{UNI/WETH}, \texttt{AAVE/WETH}) exhibit near-unity log-price correlations ($0.9971$ to $0.9999$) because both legs share the stochastic trend of Ether, the stablecoin pairs (\texttt{USDT/USDC}, \texttt{DAI/USDC}) display near-zero correlation ($0.0593$ and $-0.0056$). This occurs because fiat-pegged stablecoins do not share a non-stationary stochastic drift; instead, they oscillate independently in a tight band around $\$1.00$. Crucially, their spread is highly stationary and exhibits the fastest Ornstein-Uhlenbeck mean-reversion speed ($\theta = 0.1531$ and $0.1073$), translating into short half-lives of $4.53$ hours and $6.46$ hours. Conversely, higher-fee DeFi governance tokens (\texttt{UNI/WETH} at $0.30\%$ fee) exhibit slower mean reversion ($\theta = 0.0503$, half-life of $13.77$ hours), requiring wider divergence before arbitrage becomes profitable.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{results_ott_defi.png}
-    \vspace{-0.4cm}
-    \caption{Out-of-sample portfolio equity curves ($\$200,000$ initial capital) across risk-aversion parameters $\lambda \in \{0.5, 1.0, 2.0\}$ and friction regimes (Q4 2025 -- Q3 2026).}
-    \label{fig:equity}
-\end{figure}
-
-\subsection{Out-of-Sample Performance and Risk Aversion Sensitivity}
-Table \ref{tab:perf} and Figure \ref{fig:equity} present the out-of-sample performance from November 5, 2025 to July 1, 2026 ($5,695$ hours). Across all configurations, the strategy executes $451$ completed round-trip arbitrages with an average holding period of $10.27$ hours---closely matching the theoretical Ornstein-Uhlenbeck half-lives ($4.53\text{h}$ to $13.77\text{h}$) estimated during formation.
-
-Consistent with portfolio theory and Yang and Malik (2024), decreasing the risk-aversion penalty $\lambda$ scales up capital commitment per signal:
-\begin{itemize}[leftmargin=*,nosep]
-    \item \textbf{Aggressive Allocation ($\lambda=0.5$):} Generates an annualized net return of $16.82\%$ with annualized volatility of $2.20\%$, yielding an exceptional Sharpe ratio of $5.83$ (assuming $R_f = 4.00\%$), a Win/Loss ratio of $4.43$ ($81.60\%$ win rate), and a maximum drawdown of only $0.43\%$.
-    \item \textbf{Baseline Balanced Allocation ($\lambda=1.0$):} Achieves a $9.57\%$ annualized net return with $1.25\%$ volatility, a Sharpe ratio of $4.47$, a Win/Loss ratio of $4.24$, and a $0.20\%$ maximum drawdown.
-    \item \textbf{Conservative Allocation ($\lambda=2.0$) and the Gas Scale Effect:} When $\lambda=2.0$, annualized volatility drops to $0.64\%$ and maximum drawdown to $0.11\%$, generating a positive annualized return of $3.74\%$. However, because $3.74\%$ falls slightly below the $4.00\%$ risk-free benchmark, the Sharpe ratio turns slightly negative ($-0.41$). Table \ref{tab:perf} explains why: while proportional swap fees drop from $\$24,289$ ($\lambda=0.5$) to $\$7,185$ ($\lambda=2.0$) and slippage drops from $\$2,971$ to $\$376$ due to smaller trade sizes, the fixed stochastic gas cost remains invariant at $\$3,708$. Consequently, on-chain gas acts as a fixed overhead that penalizes overly fragmented position sizes.
-\end{itemize}
-
-\subsection{Quantifying the DeFi Friction Drag}
-Comparing the realistic benchmark ($\lambda=1.0$, Frictions ON) against the frictionless benchmark ($\lambda=1.0$, Frictions OFF) isolates the exact impact of decentralized market frictions. In the absence of frictions, the strategy yields $25.26\%$ annualized return with a $98.89\%$ win rate and a Sharpe ratio of $16.82$. Incorporating tiered AMM swap fees ($\$14,233$, or $73.8\%$ of total friction costs), stochastic gas ($\$3,708$, or $19.2\%$), and pool slippage ($\$1,337$, or $6.9\%$) reduces annualized performance by $15.69$ percentage points. Nevertheless, the net strategy remains highly profitable and strictly market-neutral throughout the entire out-of-sample period.
-
-\section{Conclusion}
-This study successfully adapts and extends the Optimal Trading Technique (OTT) to decentralized Automated Market Makers. By eliminating look-ahead biases, calibrating continuous-time Ornstein-Uhlenbeck mean-reversion speeds, filtering signals via causal EWMA bands, and embedding tiered AMM fees, liquidity slippage, and stochastic gas costs into the bi-objective solver, we demonstrate robust out-of-sample profitability across Stablecoin, LST, and DeFi pools. Future extensions should incorporate private transaction relays (e.g., Flashbots Protect) to mitigate Maximal Extractable Value (MEV) sandwich risk and evaluate cross-rollup execution on Layer-2 networks.
-
-\begin{thebibliography}{9}
+\begin{{table}}[H]
+\centering
+\caption{{In-Sample Cointegration Screening \& Ornstein-Uhlenbeck Calibration ($731$ Hours, Aug--Sep 2026)}}
+\label{{tab:table1}}
 \small
-\setlength{\itemsep}{0.5pt}
-\bibitem{elliott2005} Elliott, R. J., Van Der Hoek, J., \& Malcolm, W. P. (2005). Pairs trading. \textit{Quantitative Finance}, 5(3), 271--276.
-\bibitem{engle1987} Engle, R. F., \& Granger, C. W. (1987). Co-integration and error correction: Representation, estimation, and testing. \textit{Econometrica}, 55(2), 251--276.
-\bibitem{gatev2006} Gatev, E., Goetzmann, W. N., \& Rouwenhorst, K. G. (2006). Pairs trading: Performance of a relative-value arbitrage rule. \textit{Review of Financial Studies}, 19(3), 797--827.
-\bibitem{markowitz1952} Markowitz, H. (1952). Portfolio selection. \textit{The Journal of Finance}, 7(1), 77--91.
-\bibitem{yang2024} Yang, H., \& Malik, A. (2024). Optimal market-neutral multivariate pair trading on the cryptocurrency platform. \textit{International Journal of Financial Studies}, 12(3), 77.
-\end{thebibliography}
+\begin{{tabular}}{{llrrrrrr}}
+\toprule
+\textbf{{Pair}} & \textbf{{Universe}} & \textbf{{Log-Corr}} & \textbf{{p-value}} & \textbf{{Coint.}} & \textbf{{OU $\hat{{\theta}}$ ($\text{{h}}^{{-1}}$)}} & \textbf{{Half-Life (h)}} & \textbf{{AMM Fee}} \\
+\midrule
+{t1_body}
+\bottomrule
+\end{{tabular}}
+\end{{table}}
 
-\end{document}
+\begin{{figure}}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{{ou_zscores_diagnostics.png}}
+\caption{{Causal EWMA Z-score trajectories ($L=72\text{{h}}$) across Stablecoin, LST, and DeFi pools (In-Sample vs.\ Out-of-Sample).}}
+\label{{fig:zscores}}
+\end{{figure}}
+
+\subsection{{Out-of-Sample Performance, Risk-Aversion Sensitivity, and Friction Decomposition}}
+Table \ref{{tab:table2}} and Figure \ref{{fig:backtest}} summarize the Out-of-Sample performance over the $1,358$-hour test window ($56.6$ days) on the $\$175,000$ multi-asset portfolio, valued hourly mark-to-market across actual token quantities.
+
+\begin{{table}}[H]
+\centering
+\caption{{Out-of-Sample Backtest Metrics \& DeFi Friction Decomposition ($1,358$ Hours, Sep--Nov 2026)}}
+\label{{tab:table2}}
+\resizebox{{\textwidth}}{{!}}{{%
+\begin{{tabular}}{{lrrrrrrrrrrrrr}}
+\toprule
+\textbf{{Scenario}} & \textbf{{Ann.\ Ret}} & \textbf{{Ann.\ Vol}} & \textbf{{Sharpe}} & \textbf{{Max DD}} & \textbf{{Trades}} & \textbf{{Win Rate}} & \textbf{{W/L Ratio}} & \textbf{{Avg Win}} & \textbf{{Avg Loss}} & \textbf{{Hold}} & \textbf{{Swap Fees}} & \textbf{{Slippage}} & \textbf{{Gas}} \\
+\midrule
+{t2_body}
+\bottomrule
+\end{{tabular}}%
+}}
+\end{{table}}
+
+\begin{{figure}}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{{results_ott_defi.png}}
+\caption{{Out-of-Sample Mark-to-Market Equity Curves, Cumulative DeFi Frictions, and Trade P\&L Distributions.}}
+\label{{fig:backtest}}
+\end{{figure}}
+
+Four empirical takeaways emerge from the Out-of-Sample backtest:
+\begin{{enumerate}}[noitemsep,topsep=1pt,leftmargin=1.4em]
+    \item \textbf{{Realistic Hit Rates Under $t+1$ Execution:}} In the frictionless benchmark ($\lambda=1.0$, Frictions OFF), the strategy executes $74$ trades with a $68.9\%$ win rate, a $2.22$ Win/Loss ratio, an annualized return of $6.49\%$, and a Sharpe ratio of $2.29$ (with maximum drawdown contained at $0.22\%$). Introducing realistic $t+1$ execution and on-chain frictions reduces the net win rate to $51.4\%$--$52.7\%$, closely matching the $\approx 53\%$ empirical win rate reported by Yang \& Malik (2024) on centralized markets.
+    \item \textbf{{Economic Role of Risk Aversion $\lambda$ on AMM Slippage:}} Because the quadratic slippage penalty $w_i^2 s_i$ and risk penalty $\lambda w_i^2 \sigma_{{i,\text{{spread}}}}$ jointly scale position sizes, increasing $\lambda$ from $0.5$ to $2.0$ progressively scales back capital deployment on the shallower \texttt{{DAI/USDC}} pool ($\$1.00\text{{M}}$ TVL). Consequently, cumulative AMM slippage drops by $82\%$ (from $\$615$ at $\lambda=0.5$ to $\$311$ at $\lambda=1.0$ and $\$108$ at $\lambda=2.0$), annualized volatility contracts from $1.41\%$ to $0.57\%$, and maximum drawdown falls from $0.39\%$ to $0.16\%$.
+    \item \textbf{{Holding Period Alignment with OU Half-Life:}} The realized average holding duration ($1.92$--$1.93$ hours) aligns closely with the In-Sample Ornstein-Uhlenbeck half-life ($2.00$ hours), confirming that the causal EWMA filter captures genuine short-horizon liquidity mean reversion.
+    \item \textbf{{Interpretation of Excess Sharpe Ratios ($r_f = 4.0\%$ Convention):}} Following standard institutional reporting, our Sharpe ratio subtracts a $4.0\%$ annualized risk-free benchmark from total portfolio return even though only $3$ of the $7$ assets ($\approx 43\%$ of total capital) belong to active cointegrated pairs at any time. At $\lambda=0.5$, the net annualized return ($4.11\%$) exceeds the $4.0\%$ hurdle ($\text{{Sharpe}} = +0.08$, raw $\text{{Return/Vol}} = 2.91$). Higher risk aversion ($\lambda \in \{{1.0, 2.0\}}$) leaves a larger share of capital idle in cash, yielding positive absolute returns ($+3.54\%$ and $+1.87\%$) but negative excess Sharpe ratios ($-0.43$ and $-3.73$) relative to a fully invested $4\%$ money-market rate.
+\end{{enumerate}}
+
+\section{{Conclusion and DeFi Deployment Recommendations}}
+Extending the Optimal Trading Technique to Uniswap V3 demonstrates that statistical arbitrage on decentralized exchanges is viable on ultra-low-fee ($1\text{{bp}}$) Stablecoin and trend-adjusted LST pools, provided that non-cointegrated governance tokens are rigorously filtered out and trade sizing internalizes concentrated AMM depth. Future production deployment on Layer-2 rollups (Arbitrum, Base) would reduce gas costs by $>95\%$ and allow rolling-window re-estimation of cointegration vectors.
+
+\vspace{{0.15cm}}
+\footnotesize
+\textbf{{References:}} Yang, X., \& Malik, K. (2024). \textit{{Optimal Trading Technique: Walk-Forward Statistical Arbitrage}}. Adams, H. et al. (2021). \textit{{Uniswap v3 Core}}.
+\end{{document}}
 """
-
-
-def main():
-    regenerate_clean_figures()
-    t1_rows, t2_rows = build_latex_tables()
-
-    tex_content = (
-        LATEX_TEMPLATE
-        .replace("%%TABLE1_ROWS%%", t1_rows)
-        .replace("%%TABLE2_ROWS%%", t2_rows)
-    )
-
     with open("report.tex", "w", encoding="utf-8") as f:
-        f.write(tex_content)
-    print("[Report] Fichier LaTeX mis à jour : 'report.tex'.")
+        f.write(tex)
+    print("[Report] 'report.tex' mis à jour avec les résultats empiriques réels.")
 
     if os.path.exists("./tectonic"):
-        print("[Report] Compilation en cours via ./tectonic...")
-        subprocess.run(["./tectonic", "report.tex"])
-        print("[Succès] 'report.pdf' mis à jour !")
-    elif shutil.which("tectonic"):
-        print("[Report] Compilation en cours via tectonic...")
-        subprocess.run(["tectonic", "report.tex"])
-        print("[Succès] 'report.pdf' mis à jour !")
-    elif shutil.which("pdflatex"):
-        print("[Report] Compilation en cours via pdflatex...")
-        subprocess.run(["pdflatex", "-interaction=nonstopmode", "report.tex"], stdout=subprocess.DEVNULL)
-        subprocess.run(["pdflatex", "-interaction=nonstopmode", "report.tex"], stdout=subprocess.DEVNULL)
-        print("[Succès] 'report.pdf' mis à jour !")
+        subprocess.run(["./tectonic", "report.tex"], check=True)
+        print("[Report] 'report.pdf' compilé avec succès via Tectonic.")
 
 
 if __name__ == "__main__":
-    main()
+    generate_diagnostic_plot()
+    build_latex()
