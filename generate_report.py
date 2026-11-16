@@ -1,4 +1,4 @@
-rr"""
+r"""
 Générateur automatisé du rapport académique LaTeX de 5 pages (report.tex -> report.pdf).
 Corrige :
 - 0 Overfull \hbox (aucun débordement de texte ni d'URL)
