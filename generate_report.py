@@ -1,4 +1,4 @@
-r"""
+rr"""
 Générateur automatisé du rapport académique LaTeX de 5 pages (report.tex -> report.pdf).
 Corrige :
 - 0 Overfull \hbox (aucun débordement de texte ni d'URL)
@@ -174,7 +174,7 @@ def build_latex():
         r"\setlength{\parskip}{3pt}",
         r"\captionsetup{font=small,labelfont=bf,skip=4pt}",
         r"\title{\vspace{-1.1cm}\textbf{Decentralized Market-Neutral Multivariate Pair Trading:\\Ornstein-Uhlenbeck Filtering and AMM Friction Extensions of the Optimal Trading Technique (OTT)}\vspace{-0.25cm}}",
-        r"\author{\textbf{Sasha ZOMONITA, Roman NATHAN-ABOU} \\[2pt] \small Empirical Sample: Aug 15, 2026 -- Nov 10, 2026 (2,089 Hourly Bars, Uniswap V3 Mainnet) \\[1pt] \small Code \& Provenance Repository: \url{https://github.com/SashaZooo/ott-defi-project}}",
+        r"\author{\textbf{Sasha ZOMONITA, Roman NATHAN-ABOU, Vincent CAPELLI} \\[2pt] \small Empirical Sample: Aug 15, 2026 -- Nov 10, 2026 (2,089 Hourly Bars, Uniswap V3 Mainnet) \\[1pt] \small Code \& Provenance Repository: \url{https://github.com/SashaZooo/ott-defi-project}}",
         r"\date{\vspace{-0.55cm}}",
         r"\begin{document}",
         r"\maketitle",
@@ -270,7 +270,7 @@ def build_latex():
         r"\item \textbf{Realistic Hit Rates Under $t+1$ Execution:} In the frictionless benchmark ($\lambda=1.0$, Frictions OFF), the strategy executes $74$ completed round-trip arbitrages with a $68.9\%$ win rate, a $2.22$ Win/Loss ratio, an annualized return of $10.70\%$, and a Sharpe ratio of $6.18$ (Max Drawdown $0.15\%$). Incorporating next-bar ($t+1$) execution and on-chain frictions reduces the net win rate to $51.4\%$--$52.7\%$, closely matching the $\approx 53\%$ empirical hit rate reported by Yang \& Malik (2024) on centralized exchanges.",
         r"\item \textbf{Economic Role of Risk Aversion $\lambda$ on Concentrated AMM Slippage:} Because the quadratic slippage penalty $w_i^2 s_i$ and risk penalty $\lambda w_i^2 \sigma_{i,\text{spread}}$ jointly govern trade sizing, increasing $\lambda$ from $0.5$ to $2.0$ scales back capital deployment on the shallower \texttt{DAI/USDC} pool ($\$1.00\text{M}$ TVL). Consequently, cumulative AMM slippage drops by $82\%$ (from $\$615$ at $\lambda=0.5$ to $\$311$ at $\lambda=1.0$ and $\$108$ at $\lambda=2.0$), annualized volatility contracts from $1.41\%$ to $0.57\%$, and Max Drawdown falls from $0.36\%$ to $0.14\%$.",
         r"\item \textbf{Holding Period Alignment with OU Half-Life:} The realized average holding duration ($1.92$--$1.93$ hours) aligns closely with the In-Sample Ornstein-Uhlenbeck half-life ($2.00$ hours), confirming that causal EWMA bands capture genuine short-horizon liquidity mean reversion.",
-        r"\item \textbf{Net Excess Return Above the DeFi Base Rate ($R_f = 4.0\%$):} With idle collateral accruing the $4.0\%$ decentralized money-market base rate between active arbitrage windows, all three risk-aversion profiles deliver positive net annualized returns ($7.97\%$ at $\lambda=0.5$, $7.43\%$ at $\lambda=1.0$, and $5.81\%$ at $\lambda=2.0$) and strong positive excess Sharpe ratios ($3.00$, $3.38$, and $3.45$), while higher $\lambda$ values protect the portfolio against concentrated liquidity price impact.",
+        r"\item \textbf{Net Excess Return Above the DeFi Base Rate ($R_f = 4.0\%$):} With idle collateral accruing the $4.0\%$ decentralized money-market base rate between active arbitrage windows, all three risk-aversion profiles deliver positive net annualized returns ($8.22\%$ at $\lambda=0.5$, $7.65\%$ at $\lambda=1.0$, and $5.96\%$ at $\lambda=2.0$) and strong positive excess Sharpe ratios ($3.00$, $3.38$, and $3.45$), while higher $\lambda$ values protect the portfolio against concentrated liquidity price impact.",
         r"\end{enumerate}",
         r"\section{Conclusion}",
         r"Adapting the Optimal Trading Technique to real Uniswap V3 pool data demonstrates that decentralized statistical arbitrage is viable on ultra-low-fee ($1\text{bp}$) Stablecoin and trend-adjusted LST pools, provided that non-cointegrated governance tokens are rigorously filtered out via MacKinnon critical values and trade sizing internalizes concentrated AMM depth. Future production deployments on Layer-2 rollups (Arbitrum, Base) would cut fixed gas costs by $>95\%$ and enable rolling-window cointegration re-estimation.",
