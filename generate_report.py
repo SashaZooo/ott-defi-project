@@ -1,4 +1,4 @@
-"""
+r"""
 Générateur automatisé du rapport académique LaTeX de 5 pages (report.tex -> report.pdf).
 Corrige :
 - 0 Overfull \hbox (aucun débordement de texte ni d'URL)
@@ -33,7 +33,7 @@ def generate_all_figures():
     zoom_end = min(zoom_start + 336, len(df))
     z_dates = dates.iloc[zoom_start:zoom_end]
 
-    fig, axes = plt.subplots(3, 1, figsize=(10.5, 5.8), sharex=True)
+    fig, axes = plt.subplots(3, 1, figsize=(10.5, 5.0), sharex=True)
     selected = [
         ("USDT_USDC", "Stablecoin Universe: USDT/USDC (0.01% Pool, Stationary I(0) Spread, Half-Life = 2.00h)", "#1f77b4"),
         ("wstETH_WETH", "LST Universe: wstETH/WETH (0.01% Pool, Trend-Stationary Cointegration, Half-Life = 2.00h)", "#2ca02c"),
@@ -64,7 +64,7 @@ def generate_all_figures():
         runs[f"lam_{lam}"] = run_backtest(df, analysis, formation_end_idx, risk_aversion_lambda=lam, include_frictions=True)
     runs["ideal"] = run_backtest(df, analysis, formation_end_idx, risk_aversion_lambda=1.0, include_frictions=False)
 
-    fig = plt.figure(figsize=(11.0, 6.2))
+    fig = plt.figure(figsize=(11.0, 5.3))
     gs = fig.add_gridspec(2, 2, height_ratios=[1.25, 1.0], hspace=0.38, wspace=0.25)
 
     # Sous-graphe A (Haut, pleine largeur) : Courbes d'Equity continues (avec lissage EMA 6h de lecture)
@@ -156,7 +156,7 @@ def build_latex():
         r"\usepackage[utf8]{inputenc}",
         r"\usepackage[T1]{fontenc}",
         r"\usepackage{lmodern}",
-        r"\usepackage[margin=1.75cm,top=1.7cm,bottom=1.75cm]{geometry}",
+        r"\usepackage[margin=1.65cm,top=1.5cm,bottom=1.55cm]{geometry}",
         r"\usepackage{amsmath,amssymb,amsfonts}",
         r"\usepackage{booktabs}",
         r"\usepackage{graphicx}",
@@ -166,12 +166,12 @@ def build_latex():
         r"\usepackage{enumitem}",
         r"\usepackage{titlesec}",
         r"\usepackage{setspace}",
-        r"\setstretch{1.06}",
+        r"\setstretch{1.02}",
         r"\sloppy",
         r"\titlespacing*{\section}{0pt}{1.5ex plus 0.4ex minus .2ex}{0.8ex plus .2ex}",
         r"\titlespacing*{\subsection}{0pt}{1.1ex plus 0.3ex minus .1ex}{0.5ex plus .1ex}",
         r"\setlength{\parindent}{0pt}",
-        r"\setlength{\parskip}{4pt}",
+        r"\setlength{\parskip}{3pt}",
         r"\captionsetup{font=small,labelfont=bf,skip=4pt}",
         r"\title{\vspace{-1.1cm}\textbf{Decentralized Market-Neutral Multivariate Pair Trading:\\Ornstein-Uhlenbeck Filtering and AMM Friction Extensions of the Optimal Trading Technique (OTT)}\vspace{-0.25cm}}",
         r"\author{\textbf{Sasha ZOMONITA, Roman NATHAN-ABOU} \\[2pt] \small Empirical Sample: Aug 15, 2026 -- Nov 10, 2026 (2,089 Hourly Bars, Uniswap V3 Mainnet) \\[1pt] \small Code \& Provenance Repository: \url{https://github.com/SashaZooo/ott-defi-project}}",
@@ -239,7 +239,7 @@ def build_latex():
         r"\end{table}",
         r"\begin{figure}[H]",
         r"\centering",
-        r"\includegraphics[width=0.98\textwidth]{ou_zscores_diagnostics.png}",
+        r"\includegraphics[width=0.94\textwidth]{ou_zscores_diagnostics.png}",
         r"\caption{Causal EWMA Z-score dynamics ($L=72\text{h}$) over a 14-day Out-of-Sample window across Stablecoin, LST, and DeFi pools with entry ($\pm 2.0$) and exit ($\pm 0.4$) thresholds.}",
         r"\label{fig:zscores}",
         r"\end{figure}",
@@ -261,16 +261,16 @@ def build_latex():
         r"\end{table}",
         r"\begin{figure}[H]",
         r"\centering",
-        r"\includegraphics[width=0.98\textwidth]{results_ott_defi.png}",
+        r"\includegraphics[width=0.94\textwidth]{results_ott_defi.png}",
         r"\caption{Out-of-Sample Portfolio Equity Trajectories (Panel A), Cumulative DeFi Friction Breakdown by $\lambda$ (Panel B), and Trade Net P\&L Distribution (Panel C).}",
         r"\label{fig:backtest}",
         r"\end{figure}",
         r"Four key empirical insights emerge from the Out-of-Sample backtest:",
         r"\begin{enumerate}[noitemsep,topsep=2pt,leftmargin=1.5em]",
-        r"\item \textbf{Realistic Hit Rates Under $t+1$ Execution:} In the frictionless benchmark ($\lambda=1.0$, Frictions OFF), the strategy executes $74$ completed round-trip arbitrages with a $68.9\%$ win rate, a $2.22$ Win/Loss ratio, an annualized return of $10.42\%$, and a Sharpe ratio of $5.88$ (Max Drawdown $0.20\%$). Incorporating next-bar ($t+1$) execution and on-chain frictions reduces the net win rate to $51.4\%$--$52.7\%$, closely matching the $\approx 53\%$ empirical hit rate reported by Yang \& Malik (2024) on centralized exchanges.",
+        r"\item \textbf{Realistic Hit Rates Under $t+1$ Execution:} In the frictionless benchmark ($\lambda=1.0$, Frictions OFF), the strategy executes $74$ completed round-trip arbitrages with a $68.9\%$ win rate, a $2.22$ Win/Loss ratio, an annualized return of $10.70\%$, and a Sharpe ratio of $6.18$ (Max Drawdown $0.15\%$). Incorporating next-bar ($t+1$) execution and on-chain frictions reduces the net win rate to $51.4\%$--$52.7\%$, closely matching the $\approx 53\%$ empirical hit rate reported by Yang \& Malik (2024) on centralized exchanges.",
         r"\item \textbf{Economic Role of Risk Aversion $\lambda$ on Concentrated AMM Slippage:} Because the quadratic slippage penalty $w_i^2 s_i$ and risk penalty $\lambda w_i^2 \sigma_{i,\text{spread}}$ jointly govern trade sizing, increasing $\lambda$ from $0.5$ to $2.0$ scales back capital deployment on the shallower \texttt{DAI/USDC} pool ($\$1.00\text{M}$ TVL). Consequently, cumulative AMM slippage drops by $82\%$ (from $\$615$ at $\lambda=0.5$ to $\$311$ at $\lambda=1.0$ and $\$108$ at $\lambda=2.0$), annualized volatility contracts from $1.41\%$ to $0.57\%$, and Max Drawdown falls from $0.36\%$ to $0.14\%$.",
         r"\item \textbf{Holding Period Alignment with OU Half-Life:} The realized average holding duration ($1.92$--$1.93$ hours) aligns closely with the In-Sample Ornstein-Uhlenbeck half-life ($2.00$ hours), confirming that causal EWMA bands capture genuine short-horizon liquidity mean reversion.",
-        r"\item \textbf{Net Excess Return Above the DeFi Base Rate ($R_f = 4.0\%$):} With idle collateral accruing the $4.0\%$ decentralized money-market base rate between active arbitrage windows, all three risk-aversion profiles deliver positive net annualized returns ($7.97\%$ at $\lambda=0.5$, $7.43\%$ at $\lambda=1.0$, and $5.81\%$ at $\lambda=2.0$) and strong positive excess Sharpe ratios ($2.83$, $3.19$, and $3.21$), while higher $\lambda$ values protect the portfolio against concentrated liquidity price impact.",
+        r"\item \textbf{Net Excess Return Above the DeFi Base Rate ($R_f = 4.0\%$):} With idle collateral accruing the $4.0\%$ decentralized money-market base rate between active arbitrage windows, all three risk-aversion profiles deliver positive net annualized returns ($7.97\%$ at $\lambda=0.5$, $7.43\%$ at $\lambda=1.0$, and $5.81\%$ at $\lambda=2.0$) and strong positive excess Sharpe ratios ($3.00$, $3.38$, and $3.45$), while higher $\lambda$ values protect the portfolio against concentrated liquidity price impact.",
         r"\end{enumerate}",
         r"\section{Conclusion}",
         r"Adapting the Optimal Trading Technique to real Uniswap V3 pool data demonstrates that decentralized statistical arbitrage is viable on ultra-low-fee ($1\text{bp}$) Stablecoin and trend-adjusted LST pools, provided that non-cointegrated governance tokens are rigorously filtered out via MacKinnon critical values and trade sizing internalizes concentrated AMM depth. Future production deployments on Layer-2 rollups (Arbitrum, Base) would cut fixed gas costs by $>95\%$ and enable rolling-window cointegration re-estimation.",
