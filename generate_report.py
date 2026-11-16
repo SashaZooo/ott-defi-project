@@ -53,7 +53,7 @@ def generate_all_figures():
         ax.grid(alpha=0.25)
         ax.legend(loc="upper right", fontsize=7.5, ncol=3, framealpha=0.9)
 
-    axes[-1].set_xlabel("Date (14-Day Out-of-Sample Zoom Window — Hourly UTC Observations)")
+    axes[-1].set_xlabel("Date (14-Day Out-of-Sample Zoom Window — 15-Minute UTC Observations)")
     plt.tight_layout()
     plt.savefig("ou_zscores_diagnostics.png", dpi=240)
     plt.close()
@@ -131,7 +131,7 @@ def build_latex():
         pair_tex = str(r["Pair"]).replace("_", r"/")
         t1_rows.append(
             f"\\texttt{{{pair_tex}}} & {r['Universe']} & {r['Corr']:.4f} & {r['ADF p-val']:.4f} & "
-            f"\\textbf{{{r['Coint']}}} & {r['OU Theta']:.4f} & {r['Half-Life (h)']:.2f} & {r['AMM Fee (%)']:.2f}\\% \\\\"
+            f"\\textbf{{{r['Coint']}}} & {r['OU Theta']:.4f} & {r['Half-Life ( obs)']:.2f} & {r['AMM Fee (%)']:.2f}\\% \\\\"
         )
     t1_body = "\n".join(t1_rows)
 
@@ -174,12 +174,12 @@ def build_latex():
         r"\setlength{\parskip}{3pt}",
         r"\captionsetup{font=small,labelfont=bf,skip=4pt}",
         r"\title{\vspace{-1.1cm}\textbf{Decentralized Market-Neutral Multivariate Pair Trading:\\Ornstein-Uhlenbeck Filtering and AMM Friction Extensions of the Optimal Trading Technique (OTT)}\vspace{-0.25cm}}",
-        r"\author{\textbf{Sasha ZOMONITA, Roman NATHAN-ABOU, Vincent CAPELLI} \\[2pt] \small Empirical Sample: Aug 15, 2026 -- Nov 10, 2026 (2,089 Hourly Bars, Uniswap V3 Mainnet) \\[1pt] \small Code \& Provenance Repository: \url{https://github.com/SashaZooo/ott-defi-project}}",
+        r"\author{\textbf{Sasha ZOMONITA, Roman NATHAN-ABOU, Mathis, Vincent, Vincent CAPELLI} \\[2pt] \small Empirical Sample: Aug 15, 2026 -- Nov 10, 2026 (8,353 15-Minute Bars, Uniswap V3 Mainnet) \\[1pt] \small Code \& Provenance Repository: \url{https://github.com/SashaZooo/ott-defi-project}}",
         r"\date{\vspace{-0.55cm}}",
         r"\begin{document}",
         r"\maketitle",
         r"\begin{abstract}",
-        r"\noindent This study adapts the multivariate \textit{Optimal Trading Technique} (OTT) of Yang \& Malik (2024) from centralized fiat-crypto order books to on-chain Uniswap V3 Automated Market Makers (AMMs). Using $2,089$ real hourly observations extracted from Ethereum mainnet liquidity pools via the GeckoTerminal API (August 15, 2026 -- November 10, 2026) across Stablecoins (\texttt{USDT/USDC}, \texttt{DAI/USDC}), Liquid Staking Derivatives (\texttt{wstETH/WETH}), and DeFi Governance Tokens (\texttt{UNI/WETH}, \texttt{AAVE/WETH}), we resolve three methodological flaws in the baseline reference script and introduce three DeFi-specific extensions. First, we enforce a strict 35\%/65\% In-Sample/Out-of-Sample split ($731$ formation hours vs.\ $1,358$ trading hours) and combine continuous-time Ornstein-Uhlenbeck (OU) half-life calibration with a strictly causal Exponentially Weighted Moving Average (EWMA) Z-score filter. Second, we embed real DEX execution mechanics: next-bar ($t+1$) trade execution, hedge-ratio-weighted inventory mark-to-market valuation, tier-specific swap fees ($1\text{bp}$ to $30\text{bp}$), concentrated-liquidity AMM price impact, and stochastic L1 gas costs. Empirical screening confirms strong stationarity in Stablecoin and trend-adjusted LST pools while rejecting non-cointegrated DeFi governance tokens ($p > 0.20$), yielding realistic Out-of-Sample win rates ($51.4\%$--$52.7\%$ net of frictions vs.\ $68.9\%$ frictionless) and demonstrating how risk aversion $\lambda$ mitigates concentrated AMM slippage.",
+        r"\noindent This study adapts the multivariate \textit{Optimal Trading Technique} (OTT) of Yang \& Malik (2024) from centralized fiat-crypto order books to on-chain Uniswap V3 Automated Market Makers (AMMs). Using $8,353$ real 15-minute observations extracted from Ethereum mainnet liquidity pools via the GeckoTerminal API (August 15, 2026 -- November 10, 2026) across Stablecoins (\texttt{USDT/USDC}, \texttt{DAI/USDC}), Liquid Staking Derivatives (\texttt{wstETH/WETH}), and DeFi Governance Tokens (\texttt{UNI/WETH}, \texttt{AAVE/WETH}), we resolve three methodological flaws in the baseline reference script and introduce three DeFi-specific extensions. First, we enforce a strict 35\%/65\% In-Sample/Out-of-Sample split ($731$ formation hours vs.\ $1,358$ trading hours) and combine continuous-time Ornstein-Uhlenbeck (OU) half-life calibration with a strictly causal Exponentially Weighted Moving Average (EWMA) Z-score filter. Second, we embed real DEX execution mechanics: next-bar ($t+1$) trade execution, hedge-ratio-weighted inventory mark-to-market valuation, tier-specific swap fees ($1\text{bp}$ to $30\text{bp}$), concentrated-liquidity AMM price impact, and stochastic L1 gas costs. Empirical screening confirms strong stationarity in Stablecoin and trend-adjusted LST pools while rejecting non-cointegrated DeFi governance tokens ($p > 0.20$), yielding realistic Out-of-Sample win rates ($51.4\%$--$52.7\%$ net of frictions vs.\ $68.9\%$ frictionless) and demonstrating how risk aversion $\lambda$ mitigates concentrated AMM slippage.",
         r"\end{abstract}",
         r"\section{Critical Audit of the Baseline OTT Implementation and Experimental Design}",
         r"\subsection{Methodological Audit of the Original Reference Script}",
@@ -190,7 +190,7 @@ def build_latex():
         r"\item \textbf{In-Place Covariance Mutation and Idealized Execution:} The baseline solver negates off-diagonal covariance elements in place inside the signal loop, assumes zero-latency execution at the signal bar close ($t$), sizes long and short legs 1:1 regardless of the cointegration slope $\beta$, and applies a flat centralized exchange fee without AMM price impact or blockchain gas costs.",
         r"\end{enumerate}",
         r"\subsection{Empirical Uniswap V3 Dataset and Market Regime Justification}",
-        r"To avoid synthetic circularity, we query real hourly OHLCV candles and on-chain Total Value Locked (TVL) snapshots from Ethereum mainnet Uniswap V3 pools via the GeckoTerminal API (\texttt{data\_acquisition.py}). Pool addresses and live TVL reserves are resolved programmatically by matching ERC-20 token contracts and fee tiers, and stored with provenance metadata in \texttt{data/pools\_resolved.json}. The sample covers \textbf{August 15, 2026 to November 10, 2026} ($2,089$ hourly bars), partitioned into an \textbf{In-Sample formation window} ($T_{\text{form}} = 731$ hours) and an \textbf{Out-of-Sample backtest window} ($T_{\text{test}} = 1,358$ hours). This late-Q3/Q4 2026 window captures a consolidation regime on Ethereum ($P_{\text{WETH}} \in [\$1,850, \$2,650]$) featuring compressed post-Dencun L1 base fees ($\approx 3.5\text{ Gwei}$) and pronounced fundamental dispersion across DeFi governance protocols.",
+        r"To avoid synthetic circularity, we query real 15-minute OHLCV candles and on-chain Total Value Locked (TVL) snapshots from Ethereum mainnet Uniswap V3 pools via the GeckoTerminal API (\texttt{data\_acquisition.py}). Pool addresses and live TVL reserves are resolved programmatically by matching ERC-20 token contracts and fee tiers, and stored with provenance metadata in \texttt{data/pools\_resolved.json}. The sample covers \textbf{August 15, 2026 to November 10, 2026} ($8,353$ 15-minute bars), partitioned into an \textbf{In-Sample formation window} ($T_{\text{form}} = 731$ hours) and an \textbf{Out-of-Sample backtest window} ($T_{\text{test}} = 1,358$ hours). This late-Q3/Q4 2026 window captures a consolidation regime on Ethereum ($P_{\text{WETH}} \in [\$1,850, \$2,650]$) featuring compressed post-Dencun L1 base fees ($\approx 3.5\text{ Gwei}$) and pronounced fundamental dispersion across DeFi governance protocols.",
         r"Our investment universe spans the three mandated DeFi categories across 7 ERC-20 tokens ($\text{Capital} = \$25,000$ per asset, totaling $\$175,000$):",
         r"\begin{itemize}[noitemsep,topsep=2pt,leftmargin=1.5em]",
         r"\item \textbf{Stablecoins (1bp Fee Tier):} \texttt{USDT/USDC} (Pool \texttt{0x3416...27c6}, TVL $\$33.48\text{M}$) and \texttt{DAI/USDC} (Pool \texttt{0x5777...2168}, TVL $\$1.00\text{M}$). Because fiat-backed stablecoins are individually stationary $I(0)$ series anchored at $\$1.00$, running an OLS regression produces near-zero slope ($\beta \approx 0$). We therefore test direct log-parity deviations $S_t = \ln P_{1,t} - \ln P_{2,t}$ ($\beta = 1$) via Augmented Dickey-Fuller (ADF) tests.",
@@ -199,7 +199,7 @@ def build_latex():
         r"\end{itemize}",
         r"\section{Mathematical Formulation: Ornstein-Uhlenbeck, Causal EWMA, and AMM Frictions}",
         r"\subsection{Continuous-Time Ornstein-Uhlenbeck Calibration and Causal EWMA Z-Score}",
-        r"On the In-Sample window $t \in [1, T_{\text{form}}]$, the equilibrium spread $S_t$ is modeled as a continuous-time Ornstein-Uhlenbeck process discretized at $\Delta t = 1\text{ hour}$:",
+        r"On the In-Sample window $t \in [1, T_{\text{form}}]$, the equilibrium spread $S_t$ is modeled as a continuous-time Ornstein-Uhlenbeck process discretized at $\Delta t = 15\text{ minutes}$:",
         r"\begin{equation}",
         r"dS_t = \theta (\mu_S - S_t)\,dt + \sigma_{\text{OU}}\,dW_t \quad \Longrightarrow \quad \Delta S_t = a + b S_{t-1} + \varepsilon_t, \quad b = -(1 - e^{-\theta \Delta t})",
         r"\end{equation}",
@@ -226,7 +226,7 @@ def build_latex():
         r"\end{itemize}",
         r"\begin{table}[H]",
         r"\centering",
-        r"\caption{In-Sample Cointegration Screening \& Ornstein-Uhlenbeck Calibration (731 Hours, Aug--Sep 2026)}",
+        r"\caption{In-Sample Cointegration Screening \& Ornstein-Uhlenbeck Calibration (2,923 Periods, Aug--Sep 2026)}",
         r"\label{tab:table1}",
         r"\small",
         r"\begin{tabular}{llrrrrrr}",
@@ -244,10 +244,10 @@ def build_latex():
         r"\label{fig:zscores}",
         r"\end{figure}",
         r"\subsection{Out-of-Sample Performance, Risk-Aversion Sensitivity, and Friction Decomposition}",
-        r"Table \ref{tab:table2} and Figure \ref{fig:backtest} report Out-of-Sample performance over the $1,358$-hour test window ($56.6$ days) on the $\$175,000$ multi-asset portfolio, valued hourly mark-to-market across token quantities with idle collateral earning the $4.0\%$ DeFi base savings rate.",
+        r"Table \ref{tab:table2} and Figure \ref{fig:backtest} report Out-of-Sample performance over the $1,358$-hour test window ($56.6$ days) on the $\$175,000$ multi-asset portfolio, valued 15-minute mark-to-market across token quantities with idle collateral earning the $4.0\%$ DeFi base savings rate.",
         r"\begin{table}[H]",
         r"\centering",
-        r"\caption{Out-of-Sample Backtest Metrics \& DeFi Friction Decomposition (1,358 Hours, Sep--Nov 2026, Capital \$175,000)}",
+        r"\caption{Out-of-Sample Backtest Metrics \& DeFi Friction Decomposition (5,430 Periods, Sep--Nov 2026, Capital \$175,000)}",
         r"\label{tab:table2}",
         r"\resizebox{\textwidth}{!}{%",
         r"\begin{tabular}{lrrrrrrrrrrrrr}",
