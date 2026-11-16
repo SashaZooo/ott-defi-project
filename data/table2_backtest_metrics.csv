@@ -1,5 +1,5 @@
 Scenario,Annualized Return (%),Annualized Volatility (%),Sharpe Ratio,Max Drawdown (%),Total Trades,Win Rate (%),Win/Loss Ratio,Avg Win ($),Avg Loss ($),Avg Holding (hrs),Swap Fees Paid ($),Slippage Cost ($),Gas Cost ($)
-"OTT DeFi (lambda=0.5, Frictions ON)",4.11,1.41,0.08,0.39,73,52.05,1.09,76.91,-52.15,1.93,326.48,614.93,200.99
-"OTT DeFi (lambda=1.0, Frictions ON)",3.54,1.08,-0.43,0.29,74,52.7,1.11,59.79,-39.62,1.92,255.16,310.85,203.96
-"OTT DeFi (lambda=2.0, Frictions ON)",1.87,0.57,-3.73,0.16,74,51.35,1.06,33.15,-20.98,1.92,143.3,108.3,203.96
-"OTT Ideal (lambda=1.0, Frictions OFF)",6.49,1.09,2.29,0.22,74,68.92,2.22,54.13,-45.45,1.92,0.0,0.0,0.0
+"OTT DeFi (lambda=0.5, Frictions ON)",8.22,1.41,3.0,0.3,73,52.05,1.09,76.91,-52.15,1.93,326.48,614.93,200.99
+"OTT DeFi (lambda=1.0, Frictions ON)",7.65,1.08,3.38,0.21,74,52.7,1.11,59.79,-39.62,1.92,255.16,310.85,203.96
+"OTT DeFi (lambda=2.0, Frictions ON)",5.96,0.57,3.45,0.09,74,51.35,1.06,33.15,-20.98,1.92,143.3,108.3,203.96
+"OTT Ideal (lambda=1.0, Frictions OFF)",10.7,1.08,6.18,0.15,74,68.92,2.22,54.13,-45.45,1.92,0.0,0.0,0.0

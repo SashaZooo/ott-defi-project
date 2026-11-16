@@ -196,9 +196,17 @@ def run_backtest(
                 mtm = pos["qty1"] * (p1_now - pos["open_p1"]) + pos["qty2"] * (p2_now - pos["open_p2"])
                 unrealized_pnl += mtm - (pos["entry_fee"] + pos["entry_slip"] + pos["entry_gas"])
 
+        # Rémunération horaire du collatéral non engagé au taux de base DeFi (Rf / 8760)
+        avg_committed = float(np.mean(list(committed_weights.values())))
+        idle_fraction = max(0.0, 1.0 - avg_committed)
+        if t == start_idx:
+            accrued_base_yield = 0.0
+        else:
+            accrued_base_yield += total_initial_capital * idle_fraction * (RISK_FREE_RATE / 8760.0)
+
         portfolio_history.append({
             "Date": dates[t],
-            "Equity": total_initial_capital + realized_cash_pnl + unrealized_pnl,
+            "Equity": total_initial_capital + accrued_base_yield + realized_cash_pnl + unrealized_pnl,
         })
 
     eq_df = pd.DataFrame(portfolio_history)
